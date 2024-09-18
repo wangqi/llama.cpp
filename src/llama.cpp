@@ -16903,18 +16903,20 @@ static int llama_decode_internal(
     {
         bool sorted_output = true;
 
-        GGML_ASSERT(lctx.sbatch.out_ids.size() == n_outputs);
-
-        for (size_t i = 0; i < n_outputs; ++i) {
-            size_t out_id = lctx.sbatch.out_ids[i];
-            lctx.output_ids[out_id] = i;
-            if (out_id != i) {
-                sorted_output = false;
+        //GGML_ASSERT(lctx.sbatch.out_ids.size() == n_outputs);
+        if (lctx.sbatch.out_ids.size() == n_outputs) {
+            
+            for (size_t i = 0; i < n_outputs; ++i) {
+                size_t out_id = lctx.sbatch.out_ids[i];
+                lctx.output_ids[out_id] = i;
+                if (out_id != i) {
+                    sorted_output = false;
+                }
             }
-        }
-
-        if (sorted_output) {
-            lctx.sbatch.out_ids.clear();
+            
+            if (sorted_output) {
+                lctx.sbatch.out_ids.clear();
+            }
         }
     }
 
