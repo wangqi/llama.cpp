@@ -503,6 +503,7 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
     {
         NSError * error = nil;
 
+        GGML_LOG_INFO("%s: ggml_metal_kernel_type_count    = %d\n", __func__, GGML_METAL_KERNEL_TYPE_COUNT);
         for (int i = 0; i < GGML_METAL_KERNEL_TYPE_COUNT; ++i) {
             ctx->kernels[i].pipeline = nil;
         }
