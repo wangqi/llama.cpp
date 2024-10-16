@@ -499,6 +499,7 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
     }
 #endif
 
+#if !TARGET_OS_SIMULATOR
     // load kernels
     {
         NSError * error = nil;
@@ -513,6 +514,7 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
                     (int) kernel->pipeline.maxTotalThreadsPerThreadgroup, \
                     (int) kernel->pipeline.threadExecutionWidth); \
         */
+        
 #define GGML_METAL_ADD_KERNEL(e, name, supported) \
         if (supported) { \
             struct ggml_metal_kernel * kernel = &ctx->kernels[e]; \
@@ -720,7 +722,9 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
     }
 
     [metal_library release];
-
+#else
+    GGML_LOG_WARN("%s: skipping loading metal kernal for simulator\n", __func__);
+#endif
     return ctx;
 }
 
