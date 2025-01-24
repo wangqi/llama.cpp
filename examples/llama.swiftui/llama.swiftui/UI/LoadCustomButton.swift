@@ -14,7 +14,7 @@ struct LoadCustomButton: View {
             Button(action: {
                 showFileImporter = true
             }) {
-                Text("Load Custom Model")
+                Text("Import")
             }
         }
         .fileImporter(
@@ -29,6 +29,7 @@ struct LoadCustomButton: View {
                     if !gotAccess { return }
 
                     do {
+                        print("Load model from \(file.absoluteURL)")
                         try llamaState.loadModel(modelUrl: file.absoluteURL)
                     } catch let err {
                         print("Error: \(err.localizedDescription)")

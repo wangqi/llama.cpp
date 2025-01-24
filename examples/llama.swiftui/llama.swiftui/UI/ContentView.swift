@@ -39,6 +39,8 @@ struct ContentView: View {
                     Button("Copy") {
                         UIPasteboard.general.string = llamaState.messageLog
                     }
+                    
+                    LoadCustomButton(llamaState: llamaState)
                 }
                 .buttonStyle(.bordered)
                 .padding()
@@ -138,8 +140,3 @@ struct ContentView: View {
     }
 }
 
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
-    }
-}
