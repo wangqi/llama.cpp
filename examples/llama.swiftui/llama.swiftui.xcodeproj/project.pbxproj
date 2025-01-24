@@ -3,11 +3,11 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1809696D2D05A39F00400EE8 /* llama in Frameworks */ = {isa = PBXBuildFile; productRef = 1809696C2D05A39F00400EE8 /* llama */; };
+		30CAE72F2D434CAB0054F970 /* llama in Frameworks */ = {isa = PBXBuildFile; productRef = 30CAE72E2D434CAB0054F970 /* llama */; };
 		549479CB2AC9E16000E0F78B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 549479CA2AC9E16000E0F78B /* Metal.framework */; };
 		79E1D9CD2B4CD16E005F8E46 /* InputButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E1D9CC2B4CD16E005F8E46 /* InputButton.swift */; };
 		7FA3D2B32B2EA2F600543F92 /* DownloadButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA3D2B22B2EA2F600543F92 /* DownloadButton.swift */; };
@@ -42,7 +42,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1809696D2D05A39F00400EE8 /* llama in Frameworks */,
+				30CAE72F2D434CAB0054F970 /* llama in Frameworks */,
 				549479CB2AC9E16000E0F78B /* Metal.framework in Frameworks */,
 				8A39BE0A2AC7601100BFEB40 /* Accelerate.framework in Frameworks */,
 			);
@@ -151,7 +151,7 @@
 			);
 			name = llama.swiftui;
 			packageProductDependencies = (
-				1809696C2D05A39F00400EE8 /* llama */,
+				30CAE72E2D434CAB0054F970 /* llama */,
 			);
 			productName = llama.swiftui;
 			productReference = 8A1C83732AC328BD0096AF73 /* llama.swiftui.app */;
@@ -183,6 +183,7 @@
 			);
 			mainGroup = 8A1C836A2AC328BD0096AF73;
 			packageReferences = (
+				30CAE72D2D434CAB0054F970 /* XCLocalSwiftPackageReference "../../../llama.cpp" */,
 			);
 			productRefGroup = 8A1C83742AC328BD0096AF73 /* Products */;
 			projectDirPath = "";
@@ -349,7 +350,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = WAQUDBA57D;
+				DEVELOPMENT_TEAM = Y4G353X6Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -381,7 +382,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = WAQUDBA57D;
+				DEVELOPMENT_TEAM = Y4G353X6Q5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -428,8 +429,15 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		30CAE72D2D434CAB0054F970 /* XCLocalSwiftPackageReference "../../../llama.cpp" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../../llama.cpp;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
-		1809696C2D05A39F00400EE8 /* llama */ = {
+		30CAE72E2D434CAB0054F970 /* llama */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = llama;
 		};
