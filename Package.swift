@@ -2,8 +2,14 @@
 
 import PackageDescription
 
-// MARK: - Source Files Configuration
-var sources = [
+// MARK: - Source file grouping
+// SwiftPM will choose the compiler based on file extension:
+//   .c   => C
+//   .cpp => C++
+//   .m   => Objective-C
+//   .mm  => Objective-C++
+
+let cppSources = [
     // Core llama.cpp files
     "src/llama.cpp",
     "src/llama-adapter.cpp",
@@ -32,22 +38,16 @@ var sources = [
     "common/log.cpp",
     "common/arg.cpp",
 
-    // GGML core files
-    "ggml/src/ggml.c",
-    "ggml/src/ggml-alloc.c",
+    // GGML C++ files
     "ggml/src/ggml-backend.cpp",
     "ggml/src/ggml-backend-reg.cpp",
-    "ggml/src/ggml-quants.c",
     "ggml/src/ggml-threading.cpp",
-    "ggml/src/ggml-metal/ggml-metal.m",
     "ggml/src/ggml-blas/ggml-blas.cpp",
     
     // CPU-specific implementations
-    "ggml/src/ggml-cpu/ggml-cpu.c",
     "ggml/src/ggml-cpu/ggml-cpu.cpp",
     "ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp",
     "ggml/src/ggml-cpu/ggml-cpu-hbm.cpp",
-    "ggml/src/ggml-cpu/ggml-cpu-quants.c",
     "ggml/src/ggml-cpu/ggml-cpu-traits.cpp",
     "ggml/src/ggml-cpu/llamafile/sgemm.cpp",
     "ggml/src/gguf.cpp",
@@ -55,26 +55,41 @@ var sources = [
     //Lava
     "examples/llava/llava.cpp",
     "examples/llava/clip.cpp",
-    "examples/llava/llava-cli.cpp",
-    
 ]
 
+let cSources = [
+    // GGML core C files
+    "ggml/src/ggml.c",
+    "ggml/src/ggml-alloc.c",
+    "ggml/src/ggml-quants.c",
+    "ggml/src/ggml-cpu/ggml-cpu.c",
+    "ggml/src/ggml-cpu/ggml-cpu-quants.c",
+]
+
+let objcSources = [
+    // Objective-C files:
+    "ggml/src/ggml-metal/ggml-metal.m",
+]
+
+// Combine them into a single array for the SwiftPM target:
+let sources = cppSources + cSources + objcSources
+
 // MARK: - Build Settings
-var resources: [Resource] = []
-var linkerSettings: [LinkerSetting] = []
+// These cSettings apply to all C-family source files (C & Objective-C).
 var cSettings: [CSetting] = [
     // Optimization and warning settings
     .unsafeFlags(["-Wno-shorten-64-to-32", "-O3", "-DNDEBUG"]),
     .unsafeFlags(["-fno-objc-arc"]),
-    
     // Header search paths
     .headerSearchPath("include"),
     .headerSearchPath("ggml/include"),
     .headerSearchPath("ggml/src"),
     .headerSearchPath("ggml/src/ggml-cpu"),
+    .headerSearchPath("ggml/src/ggml-metal"),
     .headerSearchPath("src"),
     .headerSearchPath("common"),
-    
+    .headerSearchPath("examples/llava"),
+
     // Feature flags
     .define("SWIFT_PACKAGE"),
     .define("GGML_USE_ACCELERATE"),
@@ -88,20 +103,26 @@ var cSettings: [CSetting] = [
     .define("GGML_USE_METAL"),
 ]
 
-// MARK: - Platform Specific Configuration
+// These cxxSettings apply to the C++/Objective-C++ files (.cpp/.mm).
+var cxxSettings: [CXXSetting] = [
+    .unsafeFlags(["-fno-rtti", "-O3"]),
+]
+
+// Resources (e.g. Metal shaders)
+var resources: [Resource] = []
+var linkerSettings: [LinkerSetting] = []
+
 #if canImport(Darwin)
-// Add Metal support for Apple platforms
-sources.append("ggml/src/ggml-metal/ggml-metal.m")
 resources.append(.process("ggml/src/ggml-metal/ggml-metal.metal"))
 linkerSettings.append(contentsOf: [
     .linkedFramework("Metal"),
     .linkedFramework("MetalKit"),
     .linkedFramework("MetalPerformanceShaders"),
     .linkedFramework("Accelerate"),
-    .linkedFramework("Foundation")
+    .linkedFramework("Foundation"),
 ])
 cSettings.append(contentsOf: [
-    // These placeholders get replaced by our script:
+    // Build-number placeholders if needed:
     .define("DEFAULT_LLAMA_BUILD_NUMBER", to: "$LLAMA_BUILD_NUMBER_PLACEHOLDER"),
     .define("DEFAULT_LLAMA_COMMIT",       to: "\"$LLAMA_COMMIT_PLACEHOLDER\""),
     .define("DEFAULT_LLAMA_COMPILER",     to: "\"$LLAMA_COMPILER_PLACEHOLDER\""),
@@ -113,7 +134,6 @@ cSettings.append(contentsOf: [
 cSettings.append(.define("_GNU_SOURCE"))
 #endif
 
-// MARK: - Package Definition
 let package = Package(
     name: "llama",
     platforms: [
@@ -121,9 +141,7 @@ let package = Package(
         .iOS(.v15)
     ],
     products: [
-        .library(
-            name: "llama",
-            targets: ["llama"])
+        .library(name: "llama", targets: ["llama"])
     ],
     targets: [
         .target(
@@ -132,7 +150,26 @@ let package = Package(
             exclude: [
                 "build",
                 "cmake",
-                "examples",
+                "examples/batched.swift",
+                "examples/baby-llama",
+                "examples/beam",
+                "examples/benchmark",
+                "examples/convert-llama2c-to-ggml",
+                "examples/convert-lora-to-ggml",
+                "examples/embd-input",
+                "examples/embedding",
+                "examples/finetune",
+                "examples/infill",
+                "examples/llama.swiftui",
+                "examples/main",
+                "examples/perplexity",
+                "examples/quantize",
+                "examples/quantize-stats",
+                "examples/save-load-state",
+                "examples/server",
+                "examples/simple",
+                "examples/tokenize",
+                "examples/train-text-from-scratch",
                 "scripts",
                 "models",
                 "tests",
@@ -145,8 +182,9 @@ let package = Package(
             ],
             sources: sources,
             resources: resources,
-            publicHeadersPath: "spm-headers",  // Changed from spm-headers to include for consistency
+            publicHeadersPath: "spm-headers",   // your public headers go here
             cSettings: cSettings,
+            cxxSettings: cxxSettings,
             linkerSettings: linkerSettings
         )
     ],
