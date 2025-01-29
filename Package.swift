@@ -9,77 +9,71 @@ import PackageDescription
 //   .m   => Objective-C
 //   .mm  => Objective-C++
 
-let cppSources = [
-    // Core llama.cpp files
-    "src/llama.cpp",
-    "src/llama-adapter.cpp",
-    "src/llama-arch.cpp",
-    "src/llama-batch.cpp",
-    "src/llama-chat.cpp",
-    "src/llama-context.cpp",
-    "src/llama-cparams.cpp",
-    "src/llama-grammar.cpp",
-    "src/llama-hparams.cpp",
-    "src/llama-impl.cpp",
-    "src/llama-kv-cache.cpp",
-    "src/llama-mmap.cpp",
-    "src/llama-model-loader.cpp",
-    "src/llama-model.cpp",
-    "src/llama-quant.cpp",
-    "src/llama-sampling.cpp",
-    "src/llama-vocab.cpp",
-    "src/unicode.cpp",
-    "src/unicode-data.cpp",
-
-    "common/build-info.cpp",
-    "common/common.cpp",
-    "common/sampling.cpp",
-    "common/json-schema-to-grammar.cpp",
-    "common/log.cpp",
-    "common/arg.cpp",
-
-    // GGML C++ files
+let sources = [
+    "ggml/src/ggml.c",
+    "ggml/src/gguf.cpp",
+    "ggml/src/ggml-quants.c",
+    "ggml/src/ggml-alloc.c",
     "ggml/src/ggml-backend.cpp",
-    "ggml/src/ggml-backend-reg.cpp",
     "ggml/src/ggml-threading.cpp",
+    "ggml/src/ggml-backend-reg.cpp",
+    "ggml/src/ggml-metal/ggml-metal.m",
     "ggml/src/ggml-blas/ggml-blas.cpp",
-    
-    // CPU-specific implementations
+    "ggml/src/ggml-aarch64.c",
+
+    "ggml/src/ggml-cpu/ggml-cpu-aarch64.c",
+    "ggml/src/ggml-cpu/ggml-cpu.c",
     "ggml/src/ggml-cpu/ggml-cpu.cpp",
-    "ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp",
-    "ggml/src/ggml-cpu/ggml-cpu-hbm.cpp",
+    "ggml/src/ggml-cpu/ggml-cpu-quants.c",
     "ggml/src/ggml-cpu/ggml-cpu-traits.cpp",
     "ggml/src/ggml-cpu/llamafile/sgemm.cpp",
-    "ggml/src/gguf.cpp",
+    "src/llama.cpp",
+    "src/unicode.cpp",
+    "src/unicode-data.cpp",
+    "src/llama-grammar.cpp",
+    "src/llama-vocab.cpp",
+    "src/llama-sampling.cpp",
+    "src/llama-context.cpp",
+    "src/llama-kv-cache.cpp",
+    "src/llama-mmap.cpp",
+    "src/llama-quant.cpp",
+    "src/llama-model.cpp",
+    "src/llama-model-loader.cpp",
+    "src/llama-impl.cpp",
+    "src/llama-cparams.cpp",
+    "src/llama-hparams.cpp",
+    "src/llama-chat.cpp",
+    "src/llama-batch.cpp",
+    "src/llama-arch.cpp",
+    "src/llama-adapter.cpp",
     
-    //Lava
+    "common/build-info.cpp",
+    "common/common.cpp",
+    "common/log.cpp",
+    "common/arg.cpp",
+    "common/json-schema-to-grammar.cpp",
+    "common/sampling.cpp",
+    
+    // "common/train.cpp",
     "examples/llava/llava.cpp",
     "examples/llava/clip.cpp",
+    "examples/llava/llava-cli.cpp",
 ]
-
-let cSources = [
-    // GGML core C files
-    "ggml/src/ggml.c",
-    "ggml/src/ggml-alloc.c",
-    "ggml/src/ggml-quants.c",
-    "ggml/src/ggml-cpu/ggml-cpu.c",
-    "ggml/src/ggml-cpu/ggml-cpu-quants.c",
-]
-
-let objcSources = [
-    // Objective-C files:
-    "ggml/src/ggml-metal/ggml-metal.m",
-]
-
-// Combine them into a single array for the SwiftPM target:
-let sources = cppSources + cSources + objcSources
 
 // MARK: - Build Settings
 // These cSettings apply to all C-family source files (C & Objective-C).
 var cSettings: [CSetting] = [
     // Optimization and warning settings
-    .unsafeFlags(["-Wno-shorten-64-to-32", "-O3", "-DNDEBUG"]),
     .unsafeFlags(["-fno-objc-arc"]),
+    .unsafeFlags(["-Ofast"], .when(configuration: .release)),
+    .unsafeFlags(["-O3"], .when(configuration: .debug)),
+    .unsafeFlags(["-mfma","-mfma","-mavx","-mavx2","-mf16c","-msse3","-mssse3"]), //for Intel CPU
+    .unsafeFlags(["-pthread"]),
+    .unsafeFlags(["-fno-objc-arc"]),
+    .unsafeFlags(["-Wno-shorten-64-to-32"]),
+    .unsafeFlags(["-fno-finite-math-only"], .when(configuration: .release)),
+    .unsafeFlags(["-w"]),    // ignore all warnings
+    
     // Header search paths
     .headerSearchPath("include"),
     .headerSearchPath("ggml/include"),
@@ -101,11 +95,6 @@ var cSettings: [CSetting] = [
     .define("GGML_USE_CPU"),
     .define("NDEBUG"),
     .define("GGML_USE_METAL"),
-]
-
-// These cxxSettings apply to the C++/Objective-C++ files (.cpp/.mm).
-var cxxSettings: [CXXSetting] = [
-    .unsafeFlags(["-fno-rtti", "-O3"]),
 ]
 
 // Resources (e.g. Metal shaders)
@@ -151,14 +140,8 @@ let package = Package(
                 "build",
                 "cmake",
                 "examples/batched.swift",
-                "examples/baby-llama",
-                "examples/beam",
-                "examples/benchmark",
                 "examples/convert-llama2c-to-ggml",
-                "examples/convert-lora-to-ggml",
-                "examples/embd-input",
                 "examples/embedding",
-                "examples/finetune",
                 "examples/infill",
                 "examples/llama.swiftui",
                 "examples/main",
@@ -169,7 +152,6 @@ let package = Package(
                 "examples/server",
                 "examples/simple",
                 "examples/tokenize",
-                "examples/train-text-from-scratch",
                 "scripts",
                 "models",
                 "tests",
@@ -184,7 +166,6 @@ let package = Package(
             resources: resources,
             publicHeadersPath: "spm-headers",   // your public headers go here
             cSettings: cSettings,
-            cxxSettings: cxxSettings,
             linkerSettings: linkerSettings
         )
     ],
