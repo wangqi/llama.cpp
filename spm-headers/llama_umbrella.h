@@ -18,7 +18,9 @@
 #include "ggml-metal.h"
 
 // llama
+#include "common.h"
 #include "llama.h"
+#include "sampling.h"
 
 // llava (from examples/llava)
 #include "llava.h"
