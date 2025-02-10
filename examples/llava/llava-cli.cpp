@@ -272,7 +272,7 @@ static void llava_free(struct llava_context * ctx_llava) {
     llama_backend_free();
 }
 
-int llava_main(int argc, char ** argv) {
+int main(int argc, char ** argv) {
     ggml_time_init();
 
     common_params params;
