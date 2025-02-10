@@ -91,7 +91,7 @@ int main(int argc, char ** argv) {
     // initialize the sampler
     llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(0.8f));
+    llama_sampler_chain_add(smpl, llama_sampler_init_temp(0.6f));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     // helper function to evaluate a prompt and generate a response
@@ -106,6 +106,12 @@ int main(int argc, char ** argv) {
         if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first, true) < 0) {
             GGML_ABORT("failed to tokenize the prompt\n");
         }
+        // Print each token
+        std::cout << "Input tokens: " << std::endl;
+        for (auto token : prompt_tokens) {
+            std::cout << token << " ";
+        }
+        std::cout << std::endl;
 
         // prepare a batch for the prompt
         llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
@@ -163,7 +169,9 @@ int main(int argc, char ** argv) {
             break;
         }
 
-        const char * tmpl = llama_model_chat_template(model, /* name */ nullptr);
+        // const char * tmpl = llama_model_chat_template(model, /* name */ nullptr);
+        const char * tmpl = "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=false, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{% set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{{ns.system_prompt}}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- set ns.is_tool = false -%}{{'<｜User｜>' + message['content']}}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is none %}{%- set ns.is_tool = false -%}{%- for tool in message['tool_calls']%}{%- if not ns.is_first %}{{'<｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\n' + '```json' + '\n' + tool['function']['arguments'] + '\n' + '```' + '<｜tool▁call▁end｜>'}}{%- set ns.is_first = true -%}{%- else %}{{'\n' + '<｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\n' + '```json' + '\n' + tool['function']['arguments'] + '\n' + '```' + '<｜tool▁call▁end｜>'}}{{'<｜tool▁calls▁end｜><｜end▁of▁sentence｜>'}}{%- endif %}{%- endfor %}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is not none %}{%- if ns.is_tool %}{{'<｜tool▁outputs▁end｜>' + message['content'] + '<｜end▁of▁sentence｜>'}}{%- set ns.is_tool = false -%}{%- else %}{% set content = message['content'] %}{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}{{'<｜Assistant｜>' + content + '<｜end▁of▁sentence｜>'}}{%- endif %}{%- endif %}{%- if message['role'] == 'tool' %}{%- set ns.is_tool = true -%}{%- if ns.is_output_first %}{{'<｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- set ns.is_output_first = false %}{%- else %}{{'\n<｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- endif %}{%- endif %}{%- endfor -%}{% if ns.is_tool %}{{'<｜tool▁outputs▁end｜>'}}{% endif %}{{'<｜Assistant｜>'}}";
+        printf("\nChat Template: %s\n", tmpl);
 
         // add the user input to the message list and format it
         messages.push_back({"user", strdup(user.c_str())});
@@ -179,6 +187,7 @@ int main(int argc, char ** argv) {
 
         // remove previous messages to obtain the prompt to generate the response
         std::string prompt(formatted.begin() + prev_len, formatted.begin() + new_len);
+        printf("\nprompt: %s\n", prompt.c_str());
 
         // generate a response
         printf("\033[33m");

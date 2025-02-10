@@ -149,6 +149,7 @@ struct common_sampler * common_sampler_init(const struct llama_model * model, co
 
     llama_sampler_chain_params lparams = llama_sampler_chain_default_params();
 
+    // disable performance metrics
     lparams.no_perf = params.no_perf;
 
     auto * result = new common_sampler {
@@ -160,6 +161,7 @@ struct common_sampler * common_sampler_init(const struct llama_model * model, co
         /* .cur_p  = */ {},
     };
 
+    fprintf(stdout, "params.logit_bias size: '%zu'\n", params.logit_bias.size());
     llama_sampler_chain_add(result->chain,
             llama_sampler_init_logit_bias(
                 llama_vocab_n_tokens(vocab),
