@@ -445,9 +445,22 @@ int main(int argc, char ** argv) {
 
     // group-attention state
     // number of grouped KV tokens so far (used only if params.grp_attn_n > 1)
+    // grouped attention mechanism is designed to extend the context window of the model beyond its default capacity.
+    /*
+    The grouped attention mechanism is an approach to extend the model’s context window beyond its default limit. 
+    By dividing the attention mechanism into multiple groups (ga_n), each with a specific window size (ga_w), 
+    the model can process longer sequences of tokens more efficiently. The parameter ga_i helps in tracking 
+    the progress through these groups during processing.
+    For instance, if a model’s default context window is 2048 tokens, and you set ga_n to 4 and ga_w to 2048, 
+    the grouped attention mechanism would allow the model to handle up to 8192 tokens by processing them in 
+    four groups of 2048 tokens each.
+    */
+    // ga_i tracks the number of grouped key-value (KV) tokens processed so far. It’s used to manage the state within the grouped attention mechanism.
     int ga_i = 0;
 
+    //Represents the number of groups in the grouped attention mechanism
     const int ga_n = params.grp_attn_n;
+    // Specifies the window size for each group in the grouped attention mechanism.
     const int ga_w = params.grp_attn_w;
 
     if (ga_n != 1) {
@@ -585,9 +598,14 @@ int main(int argc, char ** argv) {
                 }
             } else {
                 // context extension via Self-Extend
+                // The loop continues as long as the number of past tokens (n_past) is greater than or equal to 
+                // the sum of ga_i and the group window size (ga_w).
                 while (n_past >= ga_i + ga_w) {
+                    // ib: Calculates the base index for the current group.
                     const int ib = (ga_n*ga_i)/ga_w;
+                    // bd: Determines the base delta, representing the total shift for the current group.
                     const int bd = (ga_w/ga_n)*(ga_n - 1);
+                    // dd: Computes the differential delta, adjusting the position within the group.
                     const int dd = (ga_w/ga_n) - ib*bd - ga_w;
 
                     LOG_DBG("\n");
@@ -595,12 +613,22 @@ int main(int argc, char ** argv) {
                     LOG_DBG("div:   [%6d, %6d] / %6d -> [%6d, %6d]\n", ga_i + ib*bd, ga_i + ib*bd + ga_w, ga_n, (ga_i + ib*bd)/ga_n, (ga_i + ib*bd + ga_w)/ga_n);
                     LOG_DBG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i + ib*bd + ga_w, n_past + ib*bd, dd, ga_i + ib*bd + ga_w + dd, n_past + ib*bd + dd);
 
+                    // llama_context * ctx, llama_seq_id seq_id, llama_pos p0, llama_pos p1, llama_pos delta) 
+                    // Purpose: Shifts the positions of tokens in the range [ga_i, n_past) by adding ib * bd.
+                    // Effect: This adjusts the positions of tokens to align with the current group’s offset.
                     llama_kv_cache_seq_add(ctx, 0, ga_i,                n_past,              ib*bd);
+                    // Purpose: Divides the positions of tokens in the range [ga_i + ib * bd, ga_i + ib * bd + ga_w) by ga_n.
+                    // Effect: This operation scales down the positions to fit within the group’s window, effectively segmenting the attention mechanism.
                     llama_kv_cache_seq_div(ctx, 0, ga_i + ib*bd,        ga_i + ib*bd + ga_w, ga_n);
+                    // Purpose: Shifts the positions of tokens in the range [ga_i + ib * bd + ga_w, n_past + ib * bd) by dd.
+                    // Effect: This final adjustment ensures that the positions are correctly aligned after the division, 
+                    //   maintaining the integrity of the token positions within the KV cache.
                     llama_kv_cache_seq_add(ctx, 0, ga_i + ib*bd + ga_w, n_past + ib*bd,      dd);
 
+                    // n_past: Decreases by the base delta (bd), effectively moving the window for the next iteration.
                     n_past -= bd;
 
+                    // Increments by the group window size divided by the number of groups (ga_w / ga_n), advancing to the next group.
                     ga_i += ga_w/ga_n;
 
                     LOG_DBG("\nn_past_old = %d, n_past = %d, ga_i = %d\n\n", n_past + bd, n_past, ga_i);
