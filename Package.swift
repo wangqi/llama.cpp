@@ -53,6 +53,7 @@ let sources = [
     "common/arg.cpp",
     "common/json-schema-to-grammar.cpp",
     "common/sampling.cpp",
+    "common/chat.cpp",
 
     // "common/train.cpp",
     "examples/llava/llava.cpp",
