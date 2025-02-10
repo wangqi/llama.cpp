@@ -272,7 +272,10 @@ static void llava_free(struct llava_context * ctx_llava) {
     llama_backend_free();
 }
 
-int main(int argc, char ** argv) {
+// The original main() function name will cause duplicate symbol error
+// wangqi modified 
+int llava_main(int argc, char ** argv);
+int llava_main(int argc, char ** argv) {
     ggml_time_init();
 
     common_params params;
