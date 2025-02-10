@@ -73,7 +73,7 @@ var cSettings: [CSetting] = [
     .unsafeFlags(["-Wno-shorten-64-to-32"]),
     .unsafeFlags(["-fno-finite-math-only"], .when(configuration: .release)),
     .unsafeFlags(["-w"]),    // ignore all warnings
- 
+
     // Header search paths
     .headerSearchPath("include"),
     .headerSearchPath("ggml/include"),
