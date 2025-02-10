@@ -39,12 +39,12 @@ echo "🔨 Rebuilding package..."
 # Passes options to the linker (ld). For example:
 #   • -L/usr/local/lib => adds a library search path
 #   • -lc++ => links the C++ standard library (on some platforms)
-# 
+#
 # Do You Need All These Flags?
 #   • Usually you only need swift build --configuration release and optionally -Xcc -Ofast or -Xcxx -Ofast for maximum optimization.
 #   • If your code references Objective‐C frameworks (like Foundation), SwiftPM automatically adds flags to compile .m files as Objective‐C.
 #   • The sample above shows how to pass additional fine-grained flags if you want them.
-# 
+#
 swift build --configuration release \
   --arch arm64 \
   -Xcc -O3 \

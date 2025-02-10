@@ -46,14 +46,14 @@ let sources = [
     "src/llama-batch.cpp",
     "src/llama-arch.cpp",
     "src/llama-adapter.cpp",
-    
+
     "common/build-info.cpp",
     "common/common.cpp",
     "common/log.cpp",
     "common/arg.cpp",
     "common/json-schema-to-grammar.cpp",
     "common/sampling.cpp",
-    
+
     // "common/train.cpp",
     "examples/llava/llava.cpp",
     "examples/llava/clip.cpp",
@@ -73,7 +73,7 @@ var cSettings: [CSetting] = [
     .unsafeFlags(["-Wno-shorten-64-to-32"]),
     .unsafeFlags(["-fno-finite-math-only"], .when(configuration: .release)),
     .unsafeFlags(["-w"]),    // ignore all warnings
-    
+ 
     // Header search paths
     .headerSearchPath("include"),
     .headerSearchPath("ggml/include"),

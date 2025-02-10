@@ -39,7 +39,7 @@ struct ContentView: View {
                     Button("Copy") {
                         UIPasteboard.general.string = llamaState.messageLog
                     }
-                    
+
                     LoadCustomButton(llamaState: llamaState)
                 }
                 .buttonStyle(.bordered)

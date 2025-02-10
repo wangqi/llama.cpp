@@ -12,7 +12,7 @@
 # Adjust variables and xcodebuild arguments as needed.
 
 echo "Build llama.cpp with cmake first to prepare required generated files"
-cmake -B build 
+cmake -B build
 cd build
 cmake -G Xcode .. \
     -DGGML_METAL_USE_BF16=ON \
@@ -97,7 +97,7 @@ rm -f "$TMP_PKG_FILE.bak"
 # This assumes your Swift package is at the same directory level as the script.
 # "xcodebuild -scheme" requires that your SwiftPM package is opened as an
 # Xcode project or workspace. If you only have a Package.swift, you can use
-# "xcodebuild -project" with `swift package generate-xcodeproj`, or 
+# "xcodebuild -project" with `swift package generate-xcodeproj`, or
 # you can use SwiftPM directly with "swift build --package-path ."
 
 # Example: build a Swift package using xcodebuild
@@ -110,16 +110,16 @@ SCHEME_NAME="llama"
 
 echo "Building with xcodebuild (scheme: $SCHEME_NAME) using $TMP_PKG_FILE"
 
-# xcodebuild can be pointed at a particular package file via -xcconfig or 
-# via environment variables, but it does not have a built-in “use this 
+# xcodebuild can be pointed at a particular package file via -xcconfig or
+# via environment variables, but it does not have a built-in “use this
 # alternate Package.swift” parameter. One workaround:
-# 
+#
 #   1) Temporarily rename Package.generated.swift -> Package.swift
 #   2) Build
 #   3) Rename back
-# 
+#
 # Or, generate an Xcode project from the custom Package.swift:
-# 
+#
 #   swift package --package-path . generate-xcodeproj --output llama.xcodeproj
 #   xcodebuild -project llama.xcodeproj ...
 
