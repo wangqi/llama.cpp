@@ -42,8 +42,8 @@ COMMON_CMAKE_ARGS=(
 )
 
 copy_llava_files() {
-    cp -fp "exmples/llava/llava.h" src/
-    cp -fp "exmples/llava/clip.h" src/
+    cp -fp "examples/llava/llava.h" src/
+    cp -fp "examples/llava/clip.h" src/
     cp -fp "examples/llava/llava.cpp" src/
     cp -fp "examples/llava/clip.cpp" src/
 }
@@ -511,8 +511,6 @@ combine_static_libraries "build-macos" "Release" "macos" "false"
 #combine_static_libraries "build-visionos-sim" "Release-xrsimulator" "visionos" "true"
 #combine_static_libraries "build-tvos-sim" "Release-appletvsimulator" "tvos" "true"
 #combine_static_libraries "build-tvos-device" "Release-appletvos" "tvos" "false"
-
-echo "Now creating xcframework"
 
 # Create XCFramework with correct debug symbols paths
 echo "Creating XCFramework..."
