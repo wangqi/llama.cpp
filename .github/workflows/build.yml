@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - master
-    paths: ['.github/workflows/build.yml', '**/CMakeLists.txt', '**/Makefile', '**/*.h', '**/*.hpp', '**/*.c', '**/*.cpp', '**/*.cu', '**/*.cuh', '**/*.swift', '**/*.m', '**/*.metal', '**/*.comp']
+    paths: ['.github/workflows/build.yml', '.github/workflows/build-linux-cross.yml', '**/CMakeLists.txt', '**/Makefile', '**/*.h', '**/*.hpp', '**/*.c', '**/*.cpp', '**/*.cu', '**/*.cuh', '**/*.swift', '**/*.m', '**/*.metal', '**/*.comp']
   pull_request:
     types: [opened, synchronize, reopened]
     paths: ['.github/workflows/build.yml', '**/CMakeLists.txt', '**/Makefile', '**/*.h', '**/*.hpp', '**/*.c', '**/*.cpp', '**/*.cu', '**/*.cuh', '**/*.swift', '**/*.m', '**/*.metal', '**/*.comp']
@@ -606,6 +606,9 @@ jobs:
             -DGGML_SYCL_F16=ON
           cmake --build build --config Release -j $(nproc)
 
+  build-linux-cross:
+    uses: ./.github/workflows/build-linux-cross.yml
+
   macOS-latest-cmake-ios:
     runs-on: macos-latest
 
@@ -673,6 +676,35 @@ jobs:
             -DLLAMA_BUILD_SERVER=OFF \
             -DCMAKE_SYSTEM_NAME=tvOS \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=ggml
+          cmake --build build --config Release -j $(sysctl -n hw.logicalcpu) -- CODE_SIGNING_ALLOWED=NO
+
+  macOS-latest-cmake-visionos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v4
+
+      - name: Dependencies
+        id: depends
+        continue-on-error: true
+        run: |
+          brew update
+
+      - name: Build
+        id: cmake_build
+        run: |
+          sysctl -a
+          cmake -B build -G Xcode \
+            -DGGML_METAL_USE_BF16=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DCMAKE_SYSTEM_NAME=visionOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=1.0 \
             -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=ggml
           cmake --build build --config Release -j $(sysctl -n hw.logicalcpu) -- CODE_SIGNING_ALLOWED=NO
 
@@ -774,7 +806,7 @@ jobs:
     env:
       OPENBLAS_VERSION: 0.3.23
       SDE_VERSION: 9.33.0-2024-01-07
-      VULKAN_VERSION: 1.4.304.1
+      VULKAN_VERSION: 1.4.309.0
 
     strategy:
       matrix:
@@ -1379,7 +1411,7 @@ jobs:
         id: pack_artifacts
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
         run: |
-          zip -r llama-${{ steps.tag.outputs.name }}-xcframework.zip build-apple/llama.xcframework
+          zip --symlinks -r llama-${{ steps.tag.outputs.name }}-xcframework.zip build-apple/llama.xcframework
 
       - name: Upload artifacts
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
