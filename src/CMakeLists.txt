@@ -30,6 +30,8 @@ add_library(llama
             unicode-data.cpp
             unicode.cpp
             unicode.h
+            llava.cpp
+            clip.cpp
             )
 
 target_include_directories(llama PRIVATE .)
