@@ -39,11 +39,16 @@ COMMON_CMAKE_ARGS=(
     -DGGML_METAL_USE_BF16=${GGML_METAL_USE_BF16}
     -DGGML_NATIVE=OFF
     -DGGML_OPENMP=${GGML_OPENMP}
+    # wangqi
+    -DCURL_INCLUDE_DIR=/opt/homebrew/opt/curl/include
+    -DCURL_LIBRARY=/opt/homebrew/opt/curl/lib/libcurl.dylib
 )
 
 copy_llava_files() {
+    cp -fp "common/stb_image.h" src/
     cp -fp "examples/llava/llava.h" src/
     cp -fp "examples/llava/clip.h" src/
+    cp -fp "examples/llava/clip-impl.h" src/
     cp -fp "examples/llava/llava.cpp" src/
     cp -fp "examples/llava/clip.cpp" src/
 }
