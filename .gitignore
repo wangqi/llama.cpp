@@ -153,3 +153,5 @@ src/llava.cpp
 src/llava.h
 src/clip-impl.h
 src/stb_image.h
+src/mtmd.cpp
+src/mtmd.h

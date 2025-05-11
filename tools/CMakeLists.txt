@@ -12,6 +12,12 @@ llama_add_compile_flags()
 
 # tools
 
+option(LLAMA_BUILD_TOOLS "Enable building command-line tools" ON)
+
+if (NOT LLAMA_BUILD_TOOLS)
+    return()
+endif()
+
 if (EMSCRIPTEN)
 else()
     add_subdirectory(batched-bench)

@@ -8,6 +8,8 @@ TVOS_MIN_OS_VERSION=16.4
 
 BUILD_SHARED_LIBS=OFF
 LLAMA_BUILD_EXAMPLES=OFF
+# wangqi exclude tools
+LLAMA_BUILD_TOOLS=OFF
 LLAMA_BUILD_TESTS=OFF
 LLAMA_BUILD_SERVER=OFF
 GGML_METAL=ON
@@ -31,6 +33,7 @@ COMMON_CMAKE_ARGS=(
     -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=ggml
     -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}
     -DLLAMA_BUILD_EXAMPLES=${LLAMA_BUILD_EXAMPLES}
+    -DLLAMA_BUILD_TOOLS=${LLAMA_BUILD_TOOLS}
     -DLLAMA_BUILD_TESTS=${LLAMA_BUILD_TESTS}
     -DLLAMA_BUILD_SERVER=${LLAMA_BUILD_SERVER}
     -DGGML_METAL_EMBED_LIBRARY=${GGML_METAL_EMBED_LIBRARY}
@@ -39,18 +42,17 @@ COMMON_CMAKE_ARGS=(
     -DGGML_METAL_USE_BF16=${GGML_METAL_USE_BF16}
     -DGGML_NATIVE=OFF
     -DGGML_OPENMP=${GGML_OPENMP}
-    # wangqi
-    -DCURL_INCLUDE_DIR=/opt/homebrew/opt/curl/include
-    -DCURL_LIBRARY=/opt/homebrew/opt/curl/lib/libcurl.dylib
 )
 
 copy_llava_files() {
     cp -fp "common/stb_image.h" src/
-    cp -fp "examples/llava/llava.h" src/
-    cp -fp "examples/llava/clip.h" src/
-    cp -fp "examples/llava/clip-impl.h" src/
-    cp -fp "examples/llava/llava.cpp" src/
-    cp -fp "examples/llava/clip.cpp" src/
+    cp -fp "tools/mtmd/llava.h" src/
+    cp -fp "tools/mtmd/clip.h" src/
+    cp -fp "tools/mtmd/clip-impl.h" src/
+    cp -fp "tools/mtmd/llava.cpp" src/
+    cp -fp "tools/mtmd/clip.cpp" src/
+    cp -fp "tools/mtmd/mtmd.h" src/
+    cp -fp "tools/mtmd/mtmd.cpp" src/
 }
 echo "copy llava and clip from examples/llava to src"
 copy_llava_files
@@ -130,8 +132,9 @@ setup_framework_structure() {
     cp ggml/include/ggml-cpu.h     ${header_path}
     cp ggml/include/ggml-blas.h    ${header_path}
     cp ggml/include/gguf.h         ${header_path}
-    cp examples/llava/clip.h       ${header_path}
-    cp examples/llava/llava.h      ${header_path}
+    # wangqi
+    cp tools/mtmd/clip.h           ${header_path}
+    cp tools/mtmd/mtmd.h           ${header_path}
 
     # Create module map (common for all platforms)
     cat > ${module_path}module.modulemap << EOF
@@ -145,7 +148,7 @@ framework module llama {
     header "ggml-blas.h"
     header "gguf.h"
     header "clip.h"
-    header "llava.h"
+    header "mtmd.h"
 
     link "c++"
     link framework "Accelerate"
@@ -329,6 +332,7 @@ combine_static_libraries() {
     for arch in $archs; do
         arch_flags+=" -arch $arch"
     done
+    echo "arch flags: $arch_flags"
 
     # Create dynamic library
     echo "Creating dynamic library for ${platform}."
@@ -347,17 +351,24 @@ combine_static_libraries() {
             case "$platform" in
                 "ios")
                     echo "Marking binary as a framework binary for iOS..."
-                    vtool -set-build-version ios ${IOS_MIN_OS_VERSION} ${IOS_MIN_OS_VERSION} -replace \
+                    xcrun vtool -set-build-version ios ${IOS_MIN_OS_VERSION} ${IOS_MIN_OS_VERSION} -replace \
                         -output "${base_dir}/${output_lib}" "${base_dir}/${output_lib}"
                     ;;
                 "visionos")
                     echo "Marking binary as a framework binary for visionOS..."
-                    vtool -set-build-version xros ${VISIONOS_MIN_OS_VERSION} ${VISIONOS_MIN_OS_VERSION} -replace \
+                    if [[ "$MAJOR_VERSION" -gt 16 ]] || [[ "$MAJOR_VERSION" -eq 16 && "$MINOR_VERSION" -gt 2 ]]; then
+                        echo "Xcode version greater than 16.2, using visionOS."
+                        VISION_OS_BUILD_VERSION="visionos"
+                    else
+                        echo "Xcode version less than or equal to 16.2, using xros."
+                        VISION_OS_BUILD_VERSION="xros"
+                    fi
+                    xcrun vtool -set-build-version ${VISION_OS_BUILD_VERSION} ${VISIONOS_MIN_OS_VERSION} ${VISIONOS_MIN_OS_VERSION} -replace \
                         -output "${base_dir}/${output_lib}" "${base_dir}/${output_lib}"
                     ;;
                 "tvos")
                     echo "Marking binary as a framework binary for tvOS..."
-                    vtool -set-build-version tvos ${TVOS_MIN_OS_VERSION} ${TVOS_MIN_OS_VERSION} -replace \
+                    xcrun vtool -set-build-version tvos ${TVOS_MIN_OS_VERSION} ${TVOS_MIN_OS_VERSION} -replace \
                         -output "${base_dir}/${output_lib}" "${base_dir}/${output_lib}"
                     ;;
             esac
@@ -417,6 +428,7 @@ cmake -B build-ios-sim -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
+    -DLLAMA_CURL=OFF \
     -S .
 cmake --build build-ios-sim --config Release -- -quiet
 
@@ -429,18 +441,21 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
+    -DLLAMA_CURL=OFF \
     -S .
 cmake --build build-ios-device --config Release -- -quiet
 
 echo "Building for macOS..."
 cmake -B build-macos -G Xcode \
-    "${COMMON_CMAKE_ARGS[@]}" \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOS_MIN_OS_VERSION} \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-    -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
-    -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -S .
+   "${COMMON_CMAKE_ARGS[@]}" \
+   -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOS_MIN_OS_VERSION} \
+   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+   -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
+   -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
+   -DLLAMA_CURL=OFF \
+   -S .
 cmake --build build-macos --config Release -- -quiet
+
 
 # echo "Building for visionOS..."
 # cmake -B build-visionos -G Xcode \
@@ -537,4 +552,3 @@ xcodebuild -create-xcframework \
     -output $(pwd)/build-apple/llama.xcframework
 
 echo "Done"
-
