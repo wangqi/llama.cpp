@@ -32,6 +32,8 @@ add_library(llama
             unicode.h
             llava.cpp
             clip.cpp
+            mtmd.cpp
+            mtmd-helper.cpp
             )
 
 target_include_directories(llama PRIVATE .)

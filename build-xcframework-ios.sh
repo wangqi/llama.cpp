@@ -44,7 +44,7 @@ COMMON_CMAKE_ARGS=(
     -DGGML_OPENMP=${GGML_OPENMP}
 )
 
-copy_llava_files() {
+copy_mtmd_files() {
     cp -fp "common/stb_image.h" src/
     cp -fp "tools/mtmd/llava.h" src/
     cp -fp "tools/mtmd/clip.h" src/
@@ -53,9 +53,10 @@ copy_llava_files() {
     cp -fp "tools/mtmd/clip.cpp" src/
     cp -fp "tools/mtmd/mtmd.h" src/
     cp -fp "tools/mtmd/mtmd.cpp" src/
+    cp -fp "tools/mtmd/mtmd-helper.cpp" src/
 }
-echo "copy llava and clip from examples/llava to src"
-copy_llava_files
+echo "copy mtmd and clip from tools/mtmd/ to src"
+copy_mtmd_files
 
 check_required_tool() {
     local tool=$1
@@ -80,10 +81,10 @@ rm -rf build-apple
 rm -rf build-ios-sim
 rm -rf build-ios-device
 rm -rf build-macos
-rm -rf build-visionos
-rm -rf build-visionos-sim
-rm -rf build-tvos-sim
-rm -rf build-tvos-device
+# rm -rf build-visionos
+# rm -rf build-visionos-sim
+# rm -rf build-tvos-sim
+# rm -rf build-tvos-device
 
 # Setup the xcframework build directory structure
 setup_framework_structure() {
