@@ -46,13 +46,14 @@ COMMON_CMAKE_ARGS=(
 
 copy_mtmd_files() {
     cp -fp "common/stb_image.h" src/
-    cp -fp "tools/mtmd/llava.h" src/
     cp -fp "tools/mtmd/clip.h" src/
     cp -fp "tools/mtmd/clip-impl.h" src/
-    cp -fp "tools/mtmd/llava.cpp" src/
     cp -fp "tools/mtmd/clip.cpp" src/
     cp -fp "tools/mtmd/mtmd.h" src/
     cp -fp "tools/mtmd/mtmd.cpp" src/
+    cp -fp "tools/mtmd/mtmd-audio.h" src/
+    cp -fp "tools/mtmd/mtmd-audio.cpp" src/
+    cp -fp "tools/mtmd/mtmd-helper.h" src/
     cp -fp "tools/mtmd/mtmd-helper.cpp" src/
 }
 echo "copy mtmd and clip from tools/mtmd/ to src"
@@ -132,10 +133,12 @@ setup_framework_structure() {
     cp ggml/include/ggml-metal.h   ${header_path}
     cp ggml/include/ggml-cpu.h     ${header_path}
     cp ggml/include/ggml-blas.h    ${header_path}
+    cp ggml/include/ggml-opt.h     ${header_path}
     cp ggml/include/gguf.h         ${header_path}
     # wangqi
     cp tools/mtmd/clip.h           ${header_path}
     cp tools/mtmd/mtmd.h           ${header_path}
+    cp src/mtmd-helper.h           ${header_path}
 
     # Create module map (common for all platforms)
     cat > ${module_path}module.modulemap << EOF
@@ -150,6 +153,7 @@ framework module llama {
     header "gguf.h"
     header "clip.h"
     header "mtmd.h"
+    header "mtmd-helper.h"
 
     link "c++"
     link framework "Accelerate"

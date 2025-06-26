@@ -35,9 +35,9 @@ add_library(llama
             unicode-data.cpp
             unicode.cpp
             unicode.h
-            llava.cpp
             clip.cpp
             mtmd.cpp
+            mtmd-audio.cpp
             mtmd-helper.cpp
             )
 

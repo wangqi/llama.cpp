@@ -146,12 +146,14 @@ poetry.toml
 # Local scripts
 /run-vim.sh
 /run-chat.sh
-# llava
+
+# Ignore copied files
 src/clip.cpp
 src/clip.h
-src/llava.cpp
-src/llava.h
 src/clip-impl.h
-src/stb_image.h
+src/mtmd-helper.h
+src/mtmd-helper.cpp
 src/mtmd.cpp
 src/mtmd.h
+src/mtmd-audio.cpp
+src/mtmd-audio.h
