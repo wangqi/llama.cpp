@@ -146,3 +146,13 @@ poetry.toml
 # Local scripts
 /run-vim.sh
 /run-chat.sh
+
+src/clip-impl.h
+src/clip.cpp
+src/clip.h
+src/mtmd-audio.cpp
+src/mtmd-audio.h
+src/mtmd-helper.cpp
+src/mtmd-helper.h
+src/mtmd.cpp
+src/mtmd.h
