@@ -45,7 +45,7 @@ COMMON_CMAKE_ARGS=(
 )
 
 copy_mtmd_files() {
-    cp -fp "common/stb_image.h" src/
+    cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
     cp -fp "tools/mtmd/clip.h" src/
     cp -fp "tools/mtmd/clip-impl.h" src/
     cp -fp "tools/mtmd/clip.cpp" src/
