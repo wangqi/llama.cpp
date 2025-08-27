@@ -75,7 +75,7 @@ check_required_tool "xcodebuild" "Please install Xcode and Xcode Command Line To
 check_required_tool "libtool" "Please install libtool which should be available with Xcode Command Line Tools (CLT). Make sure Xcode CLT is installed (xcode-select --install)"
 check_required_tool "dsymutil" "Please install Xcode and Xcode Command Line Tools (xcode-select --install)"
 
-# set -e
+set -e
 
 ## Clean up previous builds
 rm -rf build-apple
@@ -150,6 +150,7 @@ framework module llama {
     header "ggml-metal.h"
     header "ggml-cpu.h"
     header "ggml-blas.h"
+    header "ggml-opt.h"
     header "gguf.h"
     header "clip.h"
     header "mtmd.h"

@@ -158,3 +158,4 @@ src/mtmd.cpp
 src/mtmd.h
 src/mtmd-audio.cpp
 src/mtmd-audio.h
+.ccache/
