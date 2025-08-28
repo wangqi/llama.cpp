@@ -18,8 +18,8 @@ GGML_BLAS_DEFAULT=ON
 GGML_METAL_USE_BF16=ON
 GGML_OPENMP=OFF
 
-COMMON_C_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
-COMMON_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
+COMMON_C_FLAGS="-O3 -fno-finite-math-only -Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
+COMMON_CXX_FLAGS="-O3 -fno-finite-math-only -Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
 
 # Common options for all builds
 COMMON_CMAKE_ARGS=(
@@ -42,6 +42,8 @@ COMMON_CMAKE_ARGS=(
     -DGGML_METAL_USE_BF16=${GGML_METAL_USE_BF16}
     -DGGML_NATIVE=OFF
     -DGGML_OPENMP=${GGML_OPENMP}
+    -DCMAKE_C_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
+    -DCMAKE_CXX_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
 )
 
 copy_mtmd_files() {
