@@ -159,3 +159,7 @@ src/mtmd.h
 src/mtmd-audio.cpp
 src/mtmd-audio.h
 .ccache/
+
+# Code Workspace
+*.code-workspace
+
