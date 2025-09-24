@@ -548,7 +548,7 @@ echo xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMS/llama.dSYM \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
@@ -556,7 +556,7 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMS/llama.dSYM \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
 echo "Done"
