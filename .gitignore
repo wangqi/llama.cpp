@@ -160,6 +160,6 @@ src/mtmd-audio.cpp
 src/mtmd-audio.h
 .ccache/
 
-# Code Workspace
+# IDE
 *.code-workspace
-
+.windsurf/
