@@ -1,11 +1,11 @@
-# llama.cpp Upgrade: b6692 ’ b6778
+# llama.cpp Upgrade: b6692 to b6778
 
 ## Overview
 This document outlines the changes between llama.cpp tag b6692 and b6778, with a focus on mobile/iOS client improvements and potential risks for iOS integration.
 
 ## Mobile/iOS Platform Enhancements
 
-### =€ Metal Backend Improvements
+### Metal Backend Improvements
 
 #### Performance Optimizations
 - **GGML_OP_SUM Optimization** (f4ce81c): Significantly improved Metal sum operation performance with better handling of non-contiguous tensors
@@ -23,7 +23,7 @@ This document outlines the changes between llama.cpp tag b6692 and b6778, with a
 - **GPU Address Property Removed** (fa882fd2b): Eliminated use of Metal's `gpuAddress` property to improve compatibility across different iOS/macOS versions
 - **ARM v9-a Build Fix** (01d2bdc2b): Fixed compilation issues on macOS with ARM v9-a architecture targets
 
-### =» CPU Backend Enhancements
+### CPU Backend Enhancements
 
 #### ARM Performance
 - **NORM Operation Optimization** (1deee0f8d): Significant performance improvement for normalization operations using ARM NEON intrinsics and Accelerate framework
@@ -35,35 +35,35 @@ This document outlines the changes between llama.cpp tag b6692 and b6778, with a
 
 ## General Enhancements
 
-### >à Memory Management
+### Memory Management
 - **Memory Leak Fixes** (56fc38b96): Fixed CPU memory leaks in CANN backend
 - **Sequential Memory Splits** (0123ff38f): Improved memory allocation for recurrent modules
 - **Host-Memory Prompt Caching** (d00cbea63): New server-side prompt caching for better memory efficiency
 
-### =' Model Support
+### Model Support
 - **New Model Types**: Added support for LiquidAI LFM2-MoE hybrid models (aeaf8a36f)
 - **Embedding Improvements**: Enhanced SentenceTransformers support (e08db4259, 56b479584)
 - **Vision Model Fixes**: Improved handling of LLaMA tokenizer for Jamba models (477a66b03)
 
-### ¡ Server Features
+### Server Features
 - **Health Endpoint**: Added `/v1/health` endpoint for service monitoring (df1b612e2)
 - **Dynamic Token Limits**: Implemented dynamic token limits for prompt cache (bc07349a7)
 - **Request Logging**: Added logging for `/v1/completions` requests (cdb6da468)
 
 ## Risk Assessment
 
-### =â Low Risk Changes
+### Low Risk Changes
 - Most Metal optimizations are performance improvements with backward compatibility
 - CPU optimizations use standard ARM intrinsics that are widely supported
 - Server-side additions don't affect mobile clients
 - New math operations are additive features
 
-### =á Medium Risk Changes
+### Medium Risk Changes
 - **GPU Address Property Removal**: While improving compatibility, this change could affect edge cases on older iOS versions
 - **FA F32 K/V Support**: New precision mode may have different memory requirements
 - **ARM v9-a Build Fix**: Compilation fix but indicates potential ARM architecture sensitivity
 
-### =4 High Risk Considerations
+### High Risk Considerations
 - **Metal Shader Changes**: Multiple Metal shader modifications could introduce rendering issues on specific GPU architectures
 - **Memory Management Changes**: While generally positive, memory allocation changes could affect edge cases
 - **Build System Updates**: Changes to compilation flags and ARM support require thorough testing
@@ -91,3 +91,7 @@ This document outlines the changes between llama.cpp tag b6692 and b6778, with a
 ## Summary
 
 This upgrade brings significant performance and compatibility improvements for iOS clients, particularly in Metal backend performance and ARM CPU optimizations. The changes are generally low-risk with substantial performance benefits. The primary focus should be on testing Metal shader compatibility and validating ARM performance improvements across different iOS device generations.
+
+## Overall Risk Level: MODERATE
+
+The upgrade contains approximately 126 commits with significant mobile/iOS enhancements. While most changes are performance improvements and bug fixes, the Metal shader modifications and ARM build system changes require careful testing. The potential performance benefits outweigh the risks when proper testing procedures are followed.
