@@ -1,123 +1,93 @@
-# llama.cpp What's New: Tag b6558 â†’ b6692
+# llama.cpp Upgrade: b6692 ’ b6778
 
 ## Overview
-This document summarizes the key changes in llama.cpp between tags `b6558` and `b6692`, with a focus on improvements and considerations for mobile clients (iOS/Android). This upgrade brings substantial performance enhancements, particularly for Metal and Vulkan backends, along with expanded model support and critical bug fixes.
+This document outlines the changes between llama.cpp tag b6692 and b6778, with a focus on mobile/iOS client improvements and potential risks for iOS integration.
 
-## Mobile Performance Enhancements
+## Mobile/iOS Platform Enhancements
 
-### Metal Backend Improvements (iOS/macOS)
+### =€ Metal Backend Improvements
 
-#### ðŸš€ **Major Performance Optimizations**
-- **Dynamic SIMD Groups for MV kernels** (35fb82497): Improved Metal shader performance by dynamically allocating SIMD groups based on workload requirements
-- **Extended Matrix-Matrix Support** (6a2c6145a): Added F16 matrix-matrix multiplication support with non-32-multiple dimensions, significantly expanding model compatibility
-- **Non-sequential Node Fusion** (3b53634fe): Implemented graph optimization to fuse non-sequential computation nodes, reducing GPU dispatch overhead
-- **NORM + MUL + ADD Fusion** (dfcd53f7e): Combined normalization, multiplication, and addition operations into single Metal kernels for better efficiency
+#### Performance Optimizations
+- **GGML_OP_SUM Optimization** (f4ce81c): Significantly improved Metal sum operation performance with better handling of non-contiguous tensors
+- **General Metal Optimizations** (8ae32dc9): Various performance improvements and code refactoring for better Metal shader execution
+- **Flash Attention Enhancements**: Multiple commits improving Flash Attention (FA) support:
+  - F32 K/V cache support (e60f241e) - Enables better precision for KV cache
+  - Non-padded KV support (0a319bb7) - Reduces memory waste for non-standard sequence lengths
+  - Head size = 32 support (e60f241e) - Broader model compatibility
 
-#### ðŸ› ï¸ **Memory and Stability Fixes**
-- **OOM Error Reporting** (54dbc3705): Enhanced out-of-memory error handling with detailed reporting for better debugging
-- **Loop Bounds Fix** (606a73f53): Fixed critical loop bound issues in `ggml_mem_ranges` preventing potential crashes
-- **im2col Performance Restoration** (02a6a82ae): Restored optimal performance for im2col operations used in convolutional layers
-- **Reorder Conditions Relaxation** (4ea00794b): Improved tensor reordering logic for better memory access patterns
+#### New Features
+- **Optimizer Operations**: Added support for `opt_step_sgd` (3f750f8d) and `opt_step_adamw` (a31cf36ad) operations in Metal
+- **Enhanced Matrix Operations**: Improved multiply-matrix (mul-mm) and multiply-vector (mul-mv) kernels (a3cb04744)
 
-### Vulkan Backend Improvements (Cross-platform Mobile)
+#### Compatibility Fixes
+- **GPU Address Property Removed** (fa882fd2b): Eliminated use of Metal's `gpuAddress` property to improve compatibility across different iOS/macOS versions
+- **ARM v9-a Build Fix** (01d2bdc2b): Fixed compilation issues on macOS with ARM v9-a architecture targets
 
-#### ðŸ”§ **Enhanced Memory Management**
-- **Large Buffer Support** (2aaf0a2a2): Replaced `maxMemoryAllocationSize` with `maxBufferSize`, enabling >4GB buffer allocations for large models
-- **Incremental Shader Builds** (e29acf74f): Implemented incremental shader compilation system, significantly reducing build times
-- **64-bit im2col Support** (d8359f5fd): Added 64-bit integer support for im2col operations, enabling larger convolution operations
-- **Flash Attention Enhancements**: Multiple commits improving flash attention performance and validation fixes
+### =» CPU Backend Enhancements
 
-#### ðŸ“± **Mobile Device Compatibility**
-- **Older Device Support** (0499b29c6): Improved Vulkan initialization on older devices by replacing SIGABRT with proper error handling
-- **Shader Thread Optimization** (86df2c9ae): Better thread utilization during shader generation for improved performance
-- **KV Dimension Flexibility** (e6d65fb02): Support for arbitrary KV dimensions in flash attention for better model compatibility
+#### ARM Performance
+- **NORM Operation Optimization** (1deee0f8d): Significant performance improvement for normalization operations using ARM NEON intrinsics and Accelerate framework
+- **SVE Vectorization Fixes** (a80ff183a): Fixed vector scaling operations for ARM Scalable Vector Extension (SVE)
+- **New Math Operations**: Added FLOOR, CEIL, ROUND, and TRUNC unary operators (466c1911a)
 
-### OpenCL Backend Updates
-- **Extended Operations Support**: Added `pad_ext` (7c156df41) and `ne3` support in `get_rows` (d1c84a662)
-- **Code Ownership**: Established dedicated maintainers for OpenCL backend stability
+#### Cross-Platform Compatibility
+- **Environment Variable Handling** (adc9b60f1): Improved const-correctness by replacing `putenv` with `setenv` for better iOS compatibility
 
-## Architecture Improvements
+## General Enhancements
 
-### Memory Management
-- **Graph Allocation Splitting** (f2a789e33): Major refactoring of memory allocation system to respect backend buffer size limits
-- **Dynamic Memory Chunks**: Implemented intelligent memory chunking for large graphs that exceed single buffer limits
-- **Memory Leak Prevention**: Fixed several memory allocation and deallocation issues
+### >à Memory Management
+- **Memory Leak Fixes** (56fc38b96): Fixed CPU memory leaks in CANN backend
+- **Sequential Memory Splits** (0123ff38f): Improved memory allocation for recurrent modules
+- **Host-Memory Prompt Caching** (d00cbea63): New server-side prompt caching for better memory efficiency
 
-### RPC and Multi-Device Support
-- **Multi-Device RPC** (898acba68): Enhanced RPC system to support multiple devices from a single endpoint
-- **Tensor Copy Buffer Validation** (f39283960): Improved RPC tensor copying with proper buffer validation
+### =' Model Support
+- **New Model Types**: Added support for LiquidAI LFM2-MoE hybrid models (aeaf8a36f)
+- **Embedding Improvements**: Enhanced SentenceTransformers support (e08db4259, 56b479584)
+- **Vision Model Fixes**: Improved handling of LLaMA tokenizer for Jamba models (477a66b03)
 
-## Model Support Additions
-
-### New Model Architectures
-- **Granite Docling + Idefics3 Preprocessing** (ca71fb9b3): Support for new multimodal models
-- **Apertus Model** (34fcc5a4a): Implementation of Apertus architecture
-- **GLM 4.6 Support** (e74c92e84): Added support for GLM 4.6 models with optional tensor handling
-- **GroveMoE Integration** (835b2b915): Added GroveMoE mixture-of-experts model support
-- **Qwen3 Reranker** (b5bd03b83): Implemented Qwen3 reranker model support
-- **LiquidAI LFM2-2.6B** (3a5997196): Added support for LiquidAI's 2.6B model
-
-### Quantization and Precision
-- **K-quant Improvements**: Enhanced support for various quantization formats
-- **MXFP4 SIMD for s390x** (9b2651185): Added SIMD optimizations for MXFP4 on s390x architecture
-
-## WebUI and Mobile UX Improvements
-
-### Mobile Interface Enhancements
-- **Dialog and Dropdown Improvements** (3a2bdcda0): Comprehensive mobile UI enhancements for dialogs and action dropdowns
-- **Message Actions** (5d0a40f39): Always show message actions for mobile UI with improved user message sizing
-- **Settings Fields UI**: Enhanced mobile-friendly settings interface
-
-### Build System Improvements
-- **iOS Device Build Fix** (4710dd31b): Fixed critical iOS device build issues
-- **Android CCache Configuration** (2df5bcf35): Disabled ccache for Android builds to prevent compilation issues
-- **Cross-platform CI**: Enhanced CI pipeline with better mobile platform support
-
-## WebGPU and Web Platform
-- **WebGPU Operator Support** (8d78cd261): Added support for rope, div, sub, glu, scale, and cont operators
-- **Softmax and RMS Norm Optimization** (ef07a4090): Optimized critical normalization operations
-- **CUDA Graph Support** (a01431037): Enhanced CUDA graph usage for specific model architectures
+### ¡ Server Features
+- **Health Endpoint**: Added `/v1/health` endpoint for service monitoring (df1b612e2)
+- **Dynamic Token Limits**: Implemented dynamic token limits for prompt cache (bc07349a7)
+- **Request Logging**: Added logging for `/v1/completions` requests (cdb6da468)
 
 ## Risk Assessment
 
-### ðŸŸ¢ **Low Risk Changes**
-- **UI/UX improvements**: WebUI mobile enhancements are purely additive
-- **New model support**: Additional model architectures don't affect existing functionality
-- **Documentation and CI improvements**: Build system and documentation updates
+### =â Low Risk Changes
+- Most Metal optimizations are performance improvements with backward compatibility
+- CPU optimizations use standard ARM intrinsics that are widely supported
+- Server-side additions don't affect mobile clients
+- New math operations are additive features
 
-### ðŸŸ¡ **Medium Risk Changes**
-- **Metal backend optimizations**: Performance improvements require thorough testing on different iOS devices
-- **Memory management refactoring**: Major allocation system changes need validation across various model sizes
-- **Vulkan large buffer support**: New memory handling may affect compatibility with older mobile GPUs
+### =á Medium Risk Changes
+- **GPU Address Property Removal**: While improving compatibility, this change could affect edge cases on older iOS versions
+- **FA F32 K/V Support**: New precision mode may have different memory requirements
+- **ARM v9-a Build Fix**: Compilation fix but indicates potential ARM architecture sensitivity
 
-### ðŸ”´ **High Risk Areas Requiring Attention**
-- **Graph allocation system overhaul**: The memory allocation changes (f2a789e33) are extensive and may introduce memory-related bugs
-- **Metal shader fusion changes**: Node fusion optimizations could cause correctness issues in edge cases
-- **Multi-device RPC protocol changes**: Breaking changes to RPC protocol require coordinated updates
+### =4 High Risk Considerations
+- **Metal Shader Changes**: Multiple Metal shader modifications could introduce rendering issues on specific GPU architectures
+- **Memory Management Changes**: While generally positive, memory allocation changes could affect edge cases
+- **Build System Updates**: Changes to compilation flags and ARM support require thorough testing
 
-## Mobile Client Recommendations
+## Recommendations for iOS Integration
 
-### Testing Priorities
-1. **Memory Stress Testing**: Test large models (>4GB) on various mobile devices
-2. **Metal Backend Validation**: Thoroughly test all Metal optimizations on different iOS versions and devices
-3. **Vulkan Compatibility**: Validate Vulkan improvements on Android devices with different GPU vendors
-4. **Build System Verification**: Confirm iOS and Android builds work correctly across development environments
+### Testing Priority
+1. **Metal Backend Testing**: Verify Flash Attention performance and compatibility across iOS devices
+2. **ARM Performance Testing**: Test NORM operation improvements on actual iOS hardware
+3. **Memory Usage Monitoring**: Validate memory management changes don't introduce leaks or excessive usage
+4. **Build Verification**: Test XCFramework building process with new ARM compilation flags
 
-### Performance Monitoring
-- Monitor memory usage patterns with the new allocation system
-- Benchmark Metal kernel performance improvements
-- Validate Vulkan flash attention correctness and performance
-- Test RPC multi-device functionality if applicable
+### Compatibility Notes
+- Minimum iOS version requirements remain unchanged (iOS 16.4+)
+- Metal backend improvements should benefit most modern iOS devices
+- ARM optimizations particularly beneficial for iPhone/iPad with A-series chips
+- Server-side changes don't affect mobile client integration
 
-### Migration Notes
-- **iOS**: Rebuild XCFramework using updated `build-xcframework-ios.sh` to include all optimizations
-- **Android**: Ensure Vulkan drivers are updated on target devices for optimal compatibility
-- **Cross-platform**: Consider testing both Metal and Vulkan backends for fallback scenarios
-
-## Version Information
-- **GGML Version**: Updated to 0.9.4 (075c01567)
-- **Release Span**: Approximately 2 weeks of development
-- **Total Commits**: 150+ commits with significant mobile enhancements
+### Performance Expectations
+- **Improved inference speed** through optimized Metal operations
+- **Better memory efficiency** with enhanced NORM operations and non-padded KV support
+- **Broader model compatibility** with new head size and precision support
+- **Enhanced stability** through compatibility fixes and memory management improvements
 
 ## Summary
-This upgrade represents a substantial improvement in mobile performance and compatibility, particularly for iOS Metal and Android Vulkan backends, while maintaining backward compatibility with existing model formats. The **overall risk is moderate to high** due to extensive memory management refactoring and Metal backend optimizations, requiring thorough testing before deployment to production.
+
+This upgrade brings significant performance and compatibility improvements for iOS clients, particularly in Metal backend performance and ARM CPU optimizations. The changes are generally low-risk with substantial performance benefits. The primary focus should be on testing Metal shader compatibility and validating ARM performance improvements across different iOS device generations.
