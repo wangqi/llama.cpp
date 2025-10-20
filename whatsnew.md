@@ -1,97 +1,142 @@
-# llama.cpp Upgrade: b6692 to b6778
+# llama.cpp Upgrade Summary: b6778 to b6804
 
 ## Overview
-This document outlines the changes between llama.cpp tag b6692 and b6778, with a focus on mobile/iOS client improvements and potential risks for iOS integration.
+This document summarizes the changes between llama.cpp commits b6778 and b6804 (24 commits total), focusing on mobile/iOS relevance and upgrade impact assessment.
 
-## Mobile/iOS Platform Enhancements
+## Key Changes by Category
 
-### Metal Backend Improvements
+### =€ **Critical for iOS/Mobile**
 
-#### Performance Optimizations
-- **GGML_OP_SUM Optimization** (f4ce81c): Significantly improved Metal sum operation performance with better handling of non-contiguous tensors
-- **General Metal Optimizations** (8ae32dc9): Various performance improvements and code refactoring for better Metal shader execution
-- **Flash Attention Enhancements**: Multiple commits improving Flash Attention (FA) support:
-  - F32 K/V cache support (e60f241e) - Enables better precision for KV cache
-  - Non-padded KV support (0a319bb7) - Reduces memory waste for non-standard sequence lengths
-  - Head size = 32 support (e60f241e) - Broader model compatibility
+#### 1. Metal Backend Enhancements
+- **New CONV_TRANSPOSE_2D Operation** (9ad4f1931ee0f3b41d9355245ef744786aaae0aa)
+  - Adds transposed 2D convolution support to Metal backend
+  - **Files changed**: `ggml-metal-device.cpp`, `ggml-metal.metal`, operations files
+  - **Impact**: +198 lines of Metal shader code and device logic
+  - **Mobile relevance**: HIGH - Essential for CNN-based models on iOS
 
-#### New Features
-- **Optimizer Operations**: Added support for `opt_step_sgd` (3f750f8d) and `opt_step_adamw` (a31cf36ad) operations in Metal
-- **Enhanced Matrix Operations**: Improved multiply-matrix (mul-mm) and multiply-vector (mul-mv) kernels (a3cb04744)
+#### 2. Batch Processing Fix
+- **Fix build fails with `-Werror=missing-braces`** (06332e28672356b964d6dfc2ba4657e20581cd43)
+  - Fixes std::array initialization in `llama-batch.h`
+  - **Impact**: Compilation compatibility with strict compiler flags
+  - **Mobile relevance**: HIGH - Affects iOS build with strict warnings
 
-#### Compatibility Fixes
-- **GPU Address Property Removed** (fa882fd2b): Eliminated use of Metal's `gpuAddress` property to improve compatibility across different iOS/macOS versions
-- **ARM v9-a Build Fix** (01d2bdc2b): Fixed compilation issues on macOS with ARM v9-a architecture targets
+#### 3. Model Context Buffer Order Fix
+- **Fix inconsistent ctxs <-> bufs order** (66b0dbcb2d462e7b70ba5a69ee8c3899ac2efb1c)
+  - Resolves buffer ordering inconsistencies in model loading
+  - **Files changed**: `src/llama-model.cpp`
+  - **Mobile relevance**: HIGH - Critical for model stability on mobile
 
-### CPU Backend Enhancements
+### =' **Backend Improvements**
 
-#### ARM Performance
-- **NORM Operation Optimization** (1deee0f8d): Significant performance improvement for normalization operations using ARM NEON intrinsics and Accelerate framework
-- **SVE Vectorization Fixes** (a80ff183a): Fixed vector scaling operations for ARM Scalable Vector Extension (SVE)
-- **New Math Operations**: Added FLOOR, CEIL, ROUND, and TRUNC unary operators (466c1911a)
+#### Vulkan Backend
+- **State Space Model (SSM) Operations Support** (3d4e86bbeb15f487d6da6174ba6191b7c212cc25)
+  - Adds SSM conv and scan operations
+  - **Impact**: +396 lines, new shader implementations
+  - **Mobile relevance**: MEDIUM - Future iOS Vulkan support
 
-#### Cross-Platform Compatibility
-- **Environment Variable Handling** (adc9b60f1): Improved const-correctness by replacing `putenv` with `setenv` for better iOS compatibility
+- **TopK MoE Fused Shader** (e56abd2098dd2e2b0804691b93c13b48ae421627)
+  - Implements fused shader for Mixture of Experts
+  - **Impact**: +412 lines of shader code
+  - **Mobile relevance**: MEDIUM - Performance optimization
 
-## General Enhancements
+#### CUDA Backend
+- **TopK-MoE Register Optimization** (38355c6c8e43204e11a22daa7483082c0ff01e71)
+  - Uses registers instead of shared memory
+  - **Mobile relevance**: LOW - Desktop-focused
 
-### Memory Management
-- **Memory Leak Fixes** (56fc38b96): Fixed CPU memory leaks in CANN backend
-- **Sequential Memory Splits** (0123ff38f): Improved memory allocation for recurrent modules
-- **Host-Memory Prompt Caching** (d00cbea63): New server-side prompt caching for better memory efficiency
+#### SYCL Backend
+- **Mathematical Operations** (2330de7b847ca84eac766df372c604c26db72747, b22572e97dc51757d3ebe917a5a283385010ec68)
+  - Added FLOOR, CEIL, ROUND, TRUNC, ARANGE operators
+  - **Mobile relevance**: LOW - Intel GPU focused
 
-### Model Support
-- **New Model Types**: Added support for LiquidAI LFM2-MoE hybrid models (aeaf8a36f)
-- **Embedding Improvements**: Enhanced SentenceTransformers support (e08db4259, 56b479584)
-- **Vision Model Fixes**: Improved handling of LLaMA tokenizer for Jamba models (477a66b03)
+### =Ê **Model Support & Compatibility**
 
-### Server Features
-- **Health Endpoint**: Added `/v1/health` endpoint for service monitoring (df1b612e2)
-- **Dynamic Token Limits**: Implemented dynamic token limits for prompt cache (bc07349a7)
-- **Request Logging**: Added logging for `/v1/completions` requests (cdb6da468)
+#### New Model Types
+- **Granite Hybrid Models** (0398752dd450dfabdd1b9e289f6364c2600f6ab5)
+  - Adds support for IBM Granite 4 models
+  - **Files changed**: `src/llama-model.cpp`, `src/llama-model.h`
+  - **Impact**: Enhanced model compatibility
+
+#### Multimodal Support
+- **Mistral Small Omni Support** (1bb4f43380944e94c9a86e305789ba103f5e62bd)
+  - Updates mtmd tool for new multimodal model
+  - **Mobile relevance**: MEDIUM - Multimodal capabilities
+
+### =à **Build & Infrastructure**
+
+#### Platform Support
+- **s390x Architecture Support** (4f73d0a95120687e2c527739f771330a5271259a, fcb235b46618921cbd826acd49b553b5302233aa)
+  - Adds IBM mainframe architecture support
+  - **Mobile relevance**: NONE
+
+#### Code Quality
+- **Grammar Integer Overflow Fix** (79967ec596c0dacfd2251b085a57e79df292b1cc)
+  - Uses int64_t to prevent overflows in JSON schema conversion
+  - **Impact**: Improved stability and correctness
+
+### = **Bug Fixes**
+
+#### Memory & Safety
+- **SpaceMit IME Array Bounds Fix** (342c728d031d50673feded797520a44127d73379)
+  - Fixes out-of-bounds access in RISC-V quantization
+  - **Mobile relevance**: LOW - RISC-V specific
+
+#### Context & Behavior
+- **Embedding Pooling Type Warning Fix** (7062dd8460685d6700ed7621e50a22c6f3400ca3)
+  - Only warns when user explicitly specifies mismatched pooling type
+  - **Impact**: Better user experience, reduced false warnings
+
+#### RPC Memory Reporting
+- **Actual Free Memory Reporting** (41386cf365d894134ee0813d15e2f5d76f6a4d8e)
+  - Reports actual free memory instead of fixed values
+  - **Mobile relevance**: LOW - Server-side feature
 
 ## Risk Assessment
 
-### Low Risk Changes
-- Most Metal optimizations are performance improvements with backward compatibility
-- CPU optimizations use standard ARM intrinsics that are widely supported
-- Server-side additions don't affect mobile clients
-- New math operations are additive features
+### =â **LOW RISK (Safe to upgrade)**
+- Documentation updates
+- Code formatting changes
+- Non-critical bug fixes
+- New mathematical operators (SYCL)
+- s390x architecture support
 
-### Medium Risk Changes
-- **GPU Address Property Removal**: While improving compatibility, this change could affect edge cases on older iOS versions
-- **FA F32 K/V Support**: New precision mode may have different memory requirements
-- **ARM v9-a Build Fix**: Compilation fix but indicates potential ARM architecture sensitivity
+### =á **MEDIUM RISK (Test thoroughly)**
+- **Metal CONV_TRANSPOSE_2D**: New operation - needs testing on iOS devices
+- **Model buffer order fix**: Core change - verify model loading stability
+- **SSM operations**: New functionality - test if used by your models
+- **TopK MoE optimizations**: Performance changes - benchmark if applicable
 
-### High Risk Considerations
-- **Metal Shader Changes**: Multiple Metal shader modifications could introduce rendering issues on specific GPU architectures
-- **Memory Management Changes**: While generally positive, memory allocation changes could affect edge cases
-- **Build System Updates**: Changes to compilation flags and ARM support require thorough testing
+### =4 **HIGH RISK (Requires careful testing)**
+- **Batch processing braces fix**: Compilation change - verify build across all iOS versions
+- **Grammar integer overflow fix**: Logic change - test JSON schema parsing
+- **SpaceMit IME bounds fix**: Memory safety - monitor for memory issues
 
-## Recommendations for iOS Integration
+## Upgrade Recommendations
+
+### For iOS Projects
+1. **Test Metal Shaders**: Verify CONV_TRANSPOSE_2D works on target iOS devices
+2. **Build Verification**: Ensure compilation succeeds with strict compiler flags
+3. **Model Loading**: Test all supported models for buffer order changes
+4. **Memory Monitoring**: Watch for any memory-related issues after upgrade
 
 ### Testing Priority
-1. **Metal Backend Testing**: Verify Flash Attention performance and compatibility across iOS devices
-2. **ARM Performance Testing**: Test NORM operation improvements on actual iOS hardware
-3. **Memory Usage Monitoring**: Validate memory management changes don't introduce leaks or excessive usage
-4. **Build Verification**: Test XCFramework building process with new ARM compilation flags
+1. **HIGH**: Model loading and inference on iOS devices
+2. **HIGH**: Build process with various compiler configurations
+3. **MEDIUM**: Performance benchmarks with MoE models
+4. **MEDIUM**: CNN-based models using new convolution operations
 
-### Compatibility Notes
-- Minimum iOS version requirements remain unchanged (iOS 16.4+)
-- Metal backend improvements should benefit most modern iOS devices
-- ARM optimizations particularly beneficial for iPhone/iPad with A-series chips
-- Server-side changes don't affect mobile client integration
+### Migration Steps
+1. Update llama.cpp submodule to b6804
+2. Clean and rebuild the xcframework: `./build-xcframework-ios.sh`
+3. Run existing test suite on iOS devices
+4. Test models that use convolution operations
+5. Monitor memory usage and performance
+6. Validate build with production compiler settings
 
-### Performance Expectations
-- **Improved inference speed** through optimized Metal operations
-- **Better memory efficiency** with enhanced NORM operations and non-padded KV support
-- **Broader model compatibility** with new head size and precision support
-- **Enhanced stability** through compatibility fixes and memory management improvements
+## Conclusion
 
-## Summary
+This upgrade brings significant iOS-focused improvements, particularly in Metal backend capabilities and build compatibility. The changes are generally well-structured and focused on expanding model support and fixing critical issues.
 
-This upgrade brings significant performance and compatibility improvements for iOS clients, particularly in Metal backend performance and ARM CPU optimizations. The changes are generally low-risk with substantial performance benefits. The primary focus should be on testing Metal shader compatibility and validating ARM performance improvements across different iOS device generations.
+**Overall Risk Level**: **MEDIUM** - The upgrade provides valuable iOS enhancements but requires careful testing of the new Metal operations and core model loading changes.
 
-## Overall Risk Level: MODERATE
-
-The upgrade contains approximately 126 commits with significant mobile/iOS enhancements. While most changes are performance improvements and bug fixes, the Metal shader modifications and ARM build system changes require careful testing. The potential performance benefits outweigh the risks when proper testing procedures are followed.
+**Recommendation**: **PROCEED WITH UPGRADE** after thorough iOS device testing, especially for models using convolution operations.
