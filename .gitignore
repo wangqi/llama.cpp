@@ -145,3 +145,4 @@ src/mtmd-audio.h
 # IDE
 /*.code-workspace
 /.windsurf/
+examples/batched.swift/build
