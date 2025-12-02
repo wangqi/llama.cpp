@@ -1,317 +1,179 @@
-# llama.cpp Upgrade Summary
+# llama.cpp Upgrade: b7140 -> b7222
 
-**Upgrade Date:** November 24, 2025
-**Total Commits:** 47 commits merged from upstream
-**Upstream Repository:** ggml-org/llama.cpp
-
----
-
-## Executive Summary
-
-This upgrade brings significant performance improvements for iOS/macOS devices through ARM64 optimizations, adds support for new diffusion models, includes critical bug fixes, and enhances platform compatibility. The changes are primarily additive with minimal breaking changes to existing APIs.
+**Upgrade Date:** 2025-12-01
+**Total Commits:** 82
+**Risk Level:** LOW to MEDIUM
 
 ---
 
-## Key Improvements for iOS/macOS Devices
+## Summary
 
-### 1. ARM64 Performance Optimizations (Critical for iOS)
-- **Q4_K Quantization Improvements** ([#16739](https://github.com/ggml-org/llama.cpp/pull/16739))
-  - Implemented i8mm (ARM integer matrix multiply) optimized GEMM and GEMV operations for Q4_K quantization
-  - Added repack-based matrix operations specifically for ARM NEON with i8mm support
-  - **Performance Impact:** Significant speedup for Q4_K quantized models on iPhone/iPad devices with A15+ chips (supports i8mm)
-  - New functions: `ggml_gemv_q4_K_8x8_q8_K` and `ggml_gemm_q4_K_8x8_q8_K`
-
-### 2. Metal Backend Fixes
-- **macOS 11 Compatibility** (whisper/3533)
-  - Fixed Metal shader compilation issues on macOS 11
-  - Ensures backward compatibility for older macOS versions
-- **Metal Shader Debugging**
-  - Added `GGML_METAL_SHADER_DEBUG` build flag support
-  - BF16 (bfloat16) support enabled via `GGML_METAL_USE_BF16`
-
-### 3. XCFramework Build Improvements
-- Enhanced iOS/tvOS/macOS build configurations in CI/CD
-- Maintained support for:
-  - iOS device builds
-  - iOS simulator builds
-  - tvOS builds
-  - macOS universal binaries (arm64 + x86_64)
+This upgrade includes significant ARM CPU performance improvements, Metal backend enhancements, new model architecture support, and API additions for model-embedded sampling parameters. The changes are primarily additive with no breaking API changes detected.
 
 ---
 
-## New Features
+## iOS/Apple-Specific Changes
 
-### 1. New Model Architecture Support
-- **RND1 Diffusion Language Model** ([#17433](https://github.com/ggml-org/llama.cpp/pull/17433))
-  - Added support for RND1 diffusion model (Qwen3Moe-based architecture converted to diffusion)
-  - Non-causal attention support for bidirectional models
-  - New model type: `LLM_ARCH_RND1`
-  - Enhanced diffusion CLI with better parameter documentation
+### Metal Backend (GPU)
 
-### 2. Platform Support Expansion
-- **RISC-V Architecture** ([#17461](https://github.com/ggml-org/llama.cpp/pull/17461))
-  - Added RISC-V CPU feature detection
-  - RVV (RISC-V Vector) extension support
-  - Not directly relevant to iOS but shows broader platform support
+| Commit | Description |
+|--------|-------------|
+| `649495c9d` | **Add Flash Attention head size 48** - Enables FA optimization for models with 48-dimension attention heads |
 
-- **Hexagon v68/v69 Support** ([#17394](https://github.com/ggml-org/llama.cpp/pull/17394))
-  - Initial support for Qualcomm Hexagon DSP v68 and v69
-  - ROPE_NEOX support in Hexagon backend ([#17458](https://github.com/ggml-org/llama.cpp/pull/17458))
+**Files Changed:** `ggml-metal-device.m`, `ggml-metal.metal`
 
-### 3. Backend Enhancements
-- **Vulkan Improvements**
-  - Fixed Intel GPU subgroup crashes for flash attention ([#17356](https://github.com/ggml-org/llama.cpp/pull/17356))
-  - Force full subgroups to prevent crashes on Intel integrated GPUs
+### ARM CPU Performance
 
-- **CUDA Improvements**
-  - Fixed ROPE fusion for Gemma3 models ([#17378](https://github.com/ggml-org/llama.cpp/pull/17378))
-  - Fixed relaxed "fast copy" condition checks ([#17332](https://github.com/ggml-org/llama.cpp/pull/17332))
+| Commit | Description |
+|--------|-------------|
+| `dbb852b54` | **q4_K repack GEMM/GEMV with i8mm** - Major performance boost using ARM i8mm instructions for Q4_K quantization |
+| `cd8370b40` | **q4_K repack GEMM/GEMV with dotprod** - Performance improvement using ARM dotprod instructions |
+| `e6923caae` | **Fix ARM feature verification** - Fixes CMake feature detection for dotprod, SVE, i8mm on ARM64 |
 
-- **CANN Backend**
-  - Code cleanup and variable scoping fixes ([#17434](https://github.com/ggml-org/llama.cpp/pull/17434))
+**Impact:** These changes provide substantial inference speed improvements on Apple Silicon (M1/M2/M3/M4) devices for Q4_K quantized models.
+
+### Build System
+
+| Commit | Description |
+|--------|-------------|
+| `fa0465954` | **Fix macOS build with GGML_BACKEND_DL=ON** - Resolves dynamic backend loading build issues |
 
 ---
 
-## Critical Bug Fixes
+## New Model Support
 
-### 1. Security & Stability
-- **Grammar Integer Overflow** ([#17381](https://github.com/ggml-org/llama.cpp/pull/17381))
-  - Fixed DoS vulnerability caused by integer overflow in grammar parsing
-  - **Risk:** High severity if processing untrusted grammar inputs
-  - **Impact:** Essential security fix
-
-- **Chat Integer Overflow** ([#17357](https://github.com/ggml-org/llama.cpp/pull/17357))
-  - Prevented size calculations using float/double that could cause integer overflow
-  - Improved input validation
-
-### 2. Functional Fixes
-- **GGML Transposed SOLVE_TRI** ([#17323](https://github.com/ggml-org/llama.cpp/pull/17323))
-  - Fixed incorrect transposed results in triangle solver operations
-
-- **Kleidiai Zero-Size Array** ([#17240](https://github.com/ggml-org/llama.cpp/pull/17240))
-  - Fixed compiler warnings and potential undefined behavior
-
-- **Hexagon SWIGLU Failures** ([#17344](https://github.com/ggml-org/llama.cpp/pull/17344))
-  - Fixed activation function issues in Hexagon backend
-
-### 3. Conversion & Compatibility
-- **LoRA Conversion Fix** ([#17385](https://github.com/ggml-org/llama.cpp/pull/17385))
-  - Fixed TypeError when loading base model remotely in `convert_lora_to_gguf`
-
-- **Grammar Regression** ([#17412](https://github.com/ggml-org/llama.cpp/pull/17412))
-  - Fixed regression introduced in #17381
+| Model | Commit | Description |
+|-------|--------|-------------|
+| **Qwen3 Next** | `ff55414c4` | Full support for Qwen3 Next architecture with SSM components |
+| **Ministral3** | `cd3c11890` | Support for Mistral's Ministral3 model family |
+| **LFM2-VL** | `2ba719519`, `6783b11fb` | Fixes for Liquid Foundation Model 2 vision-language |
 
 ---
 
-## Enhancements & Quality of Life
+## API Changes
 
-### 1. Server & API Improvements
-- **Continuation Logic**
-  - Improved assistant message continuation handling
-  - Better prompt prefill features
-  - Enhanced error handling
+### New Enums
 
-- **Eval Callback Improvements**
-  - Minor fixes to evaluation callbacks
-  - Better performance measurement timing
+```c
+enum llama_model_meta_key {
+    LLAMA_MODEL_META_KEY_SAMPLING_SEQUENCE,
+    LLAMA_MODEL_META_KEY_SAMPLING_TOP_K,
+    LLAMA_MODEL_META_KEY_SAMPLING_TOP_P,
+    LLAMA_MODEL_META_KEY_SAMPLING_MIN_P,
+    LLAMA_MODEL_META_KEY_SAMPLING_XTC_PROBABILITY,
+    LLAMA_MODEL_META_KEY_SAMPLING_XTC_THRESHOLD,
+    LLAMA_MODEL_META_KEY_SAMPLING_TEMP,
+    LLAMA_MODEL_META_KEY_SAMPLING_PENALTY_LAST_N,
+    LLAMA_MODEL_META_KEY_SAMPLING_PENALTY_REPEAT,
+    LLAMA_MODEL_META_KEY_SAMPLING_MIROSTAT,
+    LLAMA_MODEL_META_KEY_SAMPLING_MIROSTAT_TAU,
+    LLAMA_MODEL_META_KEY_SAMPLING_MIROSTAT_ETA,
+};
+```
 
-### 2. Build System
-- **CMake Improvements**
-  - Fixed typos in CMake configuration
-  - Fixed `cmake --install` command
-  - Better feature flag handling for CPU variants
+### New Functions
 
-- **RISC-V FP16 Optimization** ([#17314](https://github.com/ggml-org/llama.cpp/pull/17314))
-  - Added RVV (Zvfh) optimization for FP16 vector scaling
+```c
+// Get sampling metadata key name
+const char * llama_model_meta_key_str(enum llama_model_meta_key key);
+```
 
-### 3. Documentation
-- **Diffusion Model Documentation**
-  - Comprehensive parameter documentation for diffusion CLI
-  - Examples for Dream, LLaDA, and RND1 architectures
-  - Clear scheduling parameter explanations
+### GGML API Additions
 
-### 4. UI & File Naming
-- Improved file naming and structure for UI components ([#17405](https://github.com/ggml-org/llama.cpp/pull/17405))
+- New `GGML_OP_TOP_K` operation
+- New `ggml_top_k()` function for top-k element selection
+- New `ggml_argsort_top_k()` function
+- New `GGML_SCALE_FLAG_ANTIALIAS` flag
+
+---
+
+## Multimodal Updates
+
+| Commit | Description |
+|--------|-------------|
+| `ecf74a841` | **mtmd_context_params::warmup option** - Adds warmup parameter for multimodal contexts |
+| `7f8ef50cc` | **Fix CLIP nb calculation for Qwen3-VL** - Corrects vision encoding for Qwen3-VL models |
+| `1d594c295` | **Fix MiniCPM-V resampler kq_scale** - Corrects attention scaling in MiniCPM vision |
+
+---
+
+## Performance Improvements
+
+| Commit | Description |
+|--------|-------------|
+| `134e6940c` | **Skip output reordering for single token batches** - Reduces overhead for generation |
+| `15d2b46b4` | **RPC: Cache and reuse compute graphs** - Improves RPC backend performance |
+| `6eea66691` | **Avoid expand_forward for fusion** - Reduces graph expansion overhead |
+
+---
+
+## Bug Fixes
+
+| Commit | Description |
+|--------|-------------|
+| `00c361fe5` | Fix llama arch implementation |
+| `0874693b4` | Fix JSON schema with backslash in literals |
+| `909072abc` | Fix CUDA UMA detection on discrete GPUs |
+| `05872ac88` | Fix big-endian conversion in convert script |
+| `5449367b2` | Fix chunks being too small with small matrix sizes |
 
 ---
 
 ## Risk Assessment
 
-### Overall Risk Level: **MEDIUM-LOW**
+### Low Risk
 
-### Risk Breakdown
+- **API Changes:** All additions are backward compatible; no breaking changes
+- **New Models:** New architectures don't affect existing model support
+- **Metal Changes:** Focused addition (FA head size 48) with minimal surface area
 
-#### Low Risk Areas (Safe to adopt)
+### Medium Risk Areas
 
-1. **ARM64/Metal Optimizations**
-   - **Risk:** Very Low
-   - **Reason:** Additive features with fallback to generic implementations
-   - **Impact:** Only affects Q4_K quantization performance, no breaking changes
-   - **Testing:** Well-tested in upstream CI/CD
+| Area | Risk | Mitigation |
+|------|------|------------|
+| ARM CPU repack changes | Performance regression possible on edge cases | Test Q4_K models thoroughly on device |
+| Metal shader modifications | Potential GPU computation issues | Test various model sizes on iOS |
+| Multimodal CLIP fixes | Vision model behavior changes | Verify Qwen3-VL and MiniCPM-V outputs |
 
-2. **Bug Fixes**
-   - **Risk:** Very Low
-   - **Reason:** Security and stability improvements
-   - **Impact:** Essential updates, especially grammar overflow fixes
-   - **Recommendation:** **Should be adopted**
+### Recommended Testing
 
-3. **New Model Support (RND1)**
-   - **Risk:** Very Low
-   - **Reason:** Additive feature, doesn't affect existing model support
-   - **Impact:** Only affects users who want diffusion model support
-   - **Isolation:** Self-contained in new model files
+1. **Basic Inference Test**
+   - Run inference with existing GGUF models
+   - Verify token generation quality
 
-#### Medium Risk Areas (Review before adopting)
+2. **Performance Benchmark**
+   - Compare Q4_K model speeds before/after
+   - Test on both iPhone and iPad
 
-1. **Build System Changes**
-   - **Risk:** Medium
-   - **Reason:** CMake and build configuration changes
-   - **Impact:** May affect your custom `build-xcframework-ios.sh` script
-   - **Mitigation:** Review changes to CI/CD configuration files
-   - **Action Required:** Test XCFramework build after upgrade
+3. **Vision Model Test**
+   - Test Qwen3-VL if supported
+   - Verify MiniCPM-V image understanding
 
-2. **Backend Changes (Vulkan, CUDA)**
-   - **Risk:** Low-Medium
-   - **Reason:** Not directly used on iOS, but code is compiled
-   - **Impact:** Minimal for iOS-only builds
-   - **Mitigation:** Backend selection happens at runtime
-
-3. **API Surface Changes**
-   - **Risk:** Low
-   - **Reason:** Mostly internal changes, minimal public API modifications
-   - **Known Changes:**
-     - New GGML functions for ARM optimizations (internal)
-     - New model architecture enum value (additive)
-   - **Impact:** Should not affect existing code using stable APIs
-
-#### Potential Concerns (Monitor closely)
-
-1. **Memory Management**
-   - **Concern:** Ring buffer and memory allocation changes
-   - **Testing:** Run comprehensive memory leak tests
-   - **iOS Impact:** Important due to memory constraints on mobile devices
-
-2. **Thread Safety**
-   - **Concern:** Backend multi-threading changes
-   - **Testing:** Test with multiple concurrent inference requests
-   - **iOS Impact:** Especially important for background processing
-
-3. **Quantization Changes**
-   - **Concern:** Q4_K implementation changes might affect model outputs
-   - **Testing:** Validate that existing Q4_K models produce consistent results
-   - **Recommendation:** Run perplexity tests on critical models
+4. **Metal Stress Test**
+   - Test with large context sizes
+   - Verify Flash Attention behavior
 
 ---
 
-## Testing Recommendations
+## Files Changed Summary
 
-### Critical Tests (Must Pass)
-
-1. **XCFramework Build**
-   ```bash
-   cd thirdparty/llama.cpp
-   ./build-xcframework-ios.sh
-   ```
-   - Verify all architectures build successfully
-   - Check framework size hasn't increased dramatically
-   - Validate symbol exports
-
-2. **Basic Inference**
-   - Load existing Q4_K quantized models
-   - Compare output quality before/after upgrade
-   - Measure inference speed (should be faster with ARM optimizations)
-
-3. **Memory Tests**
-   - Monitor memory usage during model loading
-   - Check for memory leaks during inference
-   - Test model unloading/reloading
-
-### Recommended Tests
-
-4. **Multi-threaded Inference**
-   - Test concurrent chat sessions
-   - Verify thread safety
-
-5. **Metal Backend**
-   - Test on various iOS devices (A12, A15+, M1+)
-   - Validate GPU memory usage
-
-6. **Edge Cases**
-   - Large context sizes
-   - Extreme prompt lengths
-   - Rapid model switching
+| Category | Files | Lines Changed |
+|----------|-------|---------------|
+| Metal Backend | 8 | +255, -37 |
+| ARM CPU | 10 | +1,283, -110 |
+| Core Library (src/) | 12 | +1,580, -47 |
+| Common Library | 10 | +1,186, -1,000 |
+| GGML Headers | 2 | +15, -6 |
+| Multimodal | 5 | +39, -14 |
 
 ---
 
-## Migration Notes
+## Upgrade Checklist
 
-### Breaking Changes
-- **None identified** - This upgrade appears to be backward compatible
-
-### Deprecated Features
-- **None identified**
-
-### Required Actions
-
-1. **Review Build Script**
-   - Check if `build-xcframework-ios.sh` needs updates
-   - Verify CMake flags are still appropriate
-
-2. **Test ARM Optimizations**
-   - Confirm i8mm optimizations activate on A15+ devices
-   - Measure performance improvements
-
-3. **Update Dependencies**
-   - No new external dependencies identified
-   - Existing Metal/Accelerate frameworks sufficient
-
----
-
-## Performance Expectations
-
-### iOS Devices with A15+ (i8mm support)
-- **Q4_K Models:** 15-30% faster inference (estimated)
-- **Other Quantizations:** No change
-- **Memory:** No significant change
-
-### iOS Devices without i8mm (A14 and older)
-- **Performance:** Fallback to existing implementations (no regression)
-- **Memory:** No change
-
----
-
-## Recommendations
-
-### Recommended to Adopt
-1. ARM64 i8mm optimizations - Free performance boost
-2. Security fixes (grammar overflow) - Essential
-3. Metal compatibility fixes - Better stability
-4. Bug fixes for GGML operations - Improved accuracy
-
-### Optional (Evaluate Based on Needs)
-1. RND1 diffusion model support - Only if needed
-2. Server/API improvements - If using server mode
-3. RISC-V/Hexagon support - Not relevant for iOS
-
-### Test Thoroughly
-1. XCFramework build process
-2. Existing model compatibility
-3. Memory usage patterns
-4. Multi-threaded scenarios
-
----
-
-## Conclusion
-
-This upgrade brings valuable performance improvements for iOS devices, critical security fixes, and enhanced stability. The changes are largely additive with minimal risk of breaking existing functionality. **The upgrade is recommended** with proper testing of the XCFramework build process and existing model inference workflows.
-
-**Primary Benefits for Your App:**
-- Faster Q4_K model inference on newer iPhones/iPads
-- Essential security fixes
-- Better Metal backend stability
-- No breaking API changes
-
-**Risk Mitigation:**
-- Comprehensive testing before release
-- Staged rollout recommended
-- Monitor crash reports for first few releases
+- [ ] Clean previous build artifacts: `rm -rf build-apple build-ios-sim build-ios-device build-macos`
+- [ ] Rebuild xcframework: `./build-xcframework-ios.sh`
+- [ ] Run basic inference test
+- [ ] Test Q4_K quantized models
+- [ ] Test multimodal models (if applicable)
+- [ ] Verify no performance regression
+- [ ] Update app version notes if needed

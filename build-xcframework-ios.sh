@@ -61,6 +61,11 @@ copy_mtmd_files() {
 echo "copy mtmd and clip from tools/mtmd/ to src"
 copy_mtmd_files
 
+XCODE_VERSION=$(xcodebuild -version 2>/dev/null | head -n1 | awk '{ print $2 }')
+MAJOR_VERSION=$(echo $XCODE_VERSION | cut -d. -f1)
+MINOR_VERSION=$(echo $XCODE_VERSION | cut -d. -f2)
+echo "Detected Xcode version: $XCODE_VERSION"
+
 check_required_tool() {
     local tool=$1
     local install_message=$2
@@ -355,7 +360,7 @@ combine_static_libraries() {
 
     # Platform-specific post-processing for device builds
     if [[ "$is_simulator" == "false" ]]; then
-        if command -v vtool &>/dev/null; then
+        if command -v xcrun vtool &>/dev/null; then
             case "$platform" in
                 "ios")
                     echo "Marking binary as a framework binary for iOS..."
