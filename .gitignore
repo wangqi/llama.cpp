@@ -146,3 +146,5 @@ src/mtmd-audio.h
 /*.code-workspace
 /.windsurf/
 examples/batched.swift/build
+# emscripten
+a.out.*
