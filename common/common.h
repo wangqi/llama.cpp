@@ -82,7 +82,8 @@ int32_t cpu_get_num_math();
 enum llama_example {
     LLAMA_EXAMPLE_COMMON,
     LLAMA_EXAMPLE_SPECULATIVE,
-    LLAMA_EXAMPLE_MAIN,
+    LLAMA_EXAMPLE_COMPLETION,
+    LLAMA_EXAMPLE_CLI,
     LLAMA_EXAMPLE_EMBEDDING,
     LLAMA_EXAMPLE_PERPLEXITY,
     LLAMA_EXAMPLE_RETRIEVAL,
@@ -194,7 +195,6 @@ struct common_params_sampling {
 
     std::vector<std::string> dry_sequence_breakers = {"\n", ":", "\"", "*"};     // default sequence breakers for DRY
 
-
     std::vector<enum common_sampler_type> samplers = {
         COMMON_SAMPLER_TYPE_PENALTIES,
         COMMON_SAMPLER_TYPE_DRY,
@@ -214,6 +214,10 @@ struct common_params_sampling {
 
     std::vector<llama_logit_bias> logit_bias;     // logit biases to apply
     std::vector<llama_logit_bias> logit_bias_eog; // pre-calculated logit biases for EOG tokens
+
+    bool has_logit_bias() const {
+        return !logit_bias.empty();
+    }
 
     // print the parameters into a string
     std::string print() const;
@@ -406,6 +410,7 @@ struct common_params {
     bool simple_io         = false; // improves compatibility with subprocesses and limited consoles
     bool cont_batching     = true;  // insert new sequences for decoding on-the-fly
     bool no_perf           = false; // disable performance metrics
+    bool show_timings      = true;  // show timing information on CLI
     bool ctx_shift         = false; // context shift on infinite text generation
     bool swa_full          = false; // use full-size SWA cache (https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)
     bool kv_unified        = false; // enable unified KV cache
@@ -462,7 +467,7 @@ struct common_params {
     std::string public_path   = "";                                                                         // NOLINT
     std::string api_prefix    = "";                                                                         // NOLINT
     std::string chat_template = "";                                                                         // NOLINT
-    bool use_jinja = false;                                                                                 // NOLINT
+    bool use_jinja = true;                                                                                  // NOLINT
     bool enable_chat_template = true;
     common_reasoning_format reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
     int reasoning_budget = -1;
@@ -482,9 +487,10 @@ struct common_params {
     bool endpoint_metrics = false;
 
     // router server configs
-    std::string models_dir = ""; // directory containing models for the router server
-    int models_max = 4;          // maximum number of models to load simultaneously
-    bool models_autoload = true; // automatically load models when requested via the router server
+    std::string models_dir    = ""; // directory containing models for the router server
+    std::string models_preset = ""; // directory containing model presets for the router server
+    int models_max = 4;             // maximum number of models to load simultaneously
+    bool models_autoload = true;    // automatically load models when requested via the router server
 
     bool log_json = false;
 
@@ -666,15 +672,29 @@ bool tty_can_use_colors();
 // Model utils
 //
 
-// note: defines object's lifetime
-struct common_init_result {
-    llama_model_ptr   model;
-    llama_context_ptr context;
+struct common_sampler;
 
-    std::vector<llama_adapter_lora_ptr> lora;
+// note: defines the model, context, samplers, ets. lifetimes
+struct common_init_result {
+    common_init_result(common_params & params);
+    ~common_init_result();
+
+    llama_model * model();
+    llama_context * context();
+    common_sampler * sampler(llama_seq_id seq_id);
+
+    std::vector<llama_adapter_lora_ptr> & lora();
+
+    void free_context();
+
+private:
+    struct impl;
+    std::unique_ptr<impl> pimpl;
 };
 
-struct common_init_result     common_init_from_params(common_params & params);
+using common_init_result_ptr = std::unique_ptr<common_init_result>;
+
+common_init_result_ptr common_init_from_params(common_params & params);
 
 struct llama_model_params     common_model_params_to_llama  (      common_params & params);
 struct llama_context_params   common_context_params_to_llama(const common_params & params);
