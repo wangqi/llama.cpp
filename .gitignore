@@ -142,6 +142,9 @@ src/mtmd.h
 src/mtmd-audio.cpp
 src/mtmd-audio.h
 /.ccache/
+src/clip-graph.h
+src/clip-model.h
+src/clip-models/
 
 # IDE
 /*.code-workspace
@@ -149,3 +152,4 @@ src/mtmd-audio.h
 examples/batched.swift/build
 # emscripten
 a.out.*
+

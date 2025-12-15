@@ -138,6 +138,17 @@ add_library(llama
             mtmd.cpp
             mtmd-audio.cpp
             mtmd-helper.cpp
+            clip-models/cogvlm.cpp
+            clip-models/internvl.cpp
+            clip-models/kimivl.cpp
+            clip-models/llama4.cpp
+            clip-models/llava.cpp
+            clip-models/minicpmv.cpp
+            clip-models/pixtral.cpp
+            clip-models/qwen2vl.cpp
+            clip-models/qwen3vl.cpp
+            clip-models/siglip.cpp
+            clip-models/whisper-enc.cpp
             )
 
 set_target_properties(llama PROPERTIES

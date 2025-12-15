@@ -48,15 +48,71 @@ COMMON_CMAKE_ARGS=(
 
 copy_mtmd_files() {
     cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
+    # Core CLIP files
     cp -fp "tools/mtmd/clip.h" src/
     cp -fp "tools/mtmd/clip-impl.h" src/
     cp -fp "tools/mtmd/clip.cpp" src/
+    # NEW: CLIP refactored headers (added in upstream after b7332)
+    cp -fp "tools/mtmd/clip-graph.h" src/
+    cp -fp "tools/mtmd/clip-model.h" src/
+    # Core mtmd files
     cp -fp "tools/mtmd/mtmd.h" src/
     cp -fp "tools/mtmd/mtmd.cpp" src/
     cp -fp "tools/mtmd/mtmd-audio.h" src/
     cp -fp "tools/mtmd/mtmd-audio.cpp" src/
     cp -fp "tools/mtmd/mtmd-helper.h" src/
     cp -fp "tools/mtmd/mtmd-helper.cpp" src/
+    # NEW: Vision model implementations (added in upstream after b7332)
+    # These go to src/clip-models/ to avoid conflict with src/models/ (llama core models)
+    mkdir -p src/clip-models
+    cp -fp "tools/mtmd/models/models.h" src/clip-models/
+    cp -fp "tools/mtmd/models/cogvlm.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/internvl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/kimivl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/llama4.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/llava.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/minicpmv.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/pixtral.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/qwen2vl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/qwen3vl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/siglip.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/whisper-enc.cpp" src/clip-models/
+    # Patch clip.cpp to use clip-models/ instead of models/
+    sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
+    # ============================================================================
+    # FRAGILE: Patch src/CMakeLists.txt to include clip-models/*.cpp
+    # ============================================================================
+    # WHY: Vision model implementations (cogvlm, llava, etc.) are copied to
+    #      src/clip-models/ but src/CMakeLists.txt doesn't know about them.
+    #      We insert them after "mtmd-helper.cpp" in the source file list.
+    #
+    # EXPECTS: src/CMakeLists.txt contains "mtmd-helper.cpp" in a source list.
+    #          The sed command appends clip-models/*.cpp files after it.
+    #
+    # IF THIS BREAKS (common causes):
+    #   1. Upstream renamed/removed "mtmd-helper.cpp" -> update the search pattern
+    #   2. Upstream added new vision models -> add them to the list below
+    #   3. Upstream removed vision models -> remove them from the list below
+    #   4. Upstream changed CMakeLists.txt format -> rewrite the sed pattern
+    #
+    # TO DEBUG: Check src/CMakeLists.txt after build fails to see actual format.
+    #           Run: grep -n "mtmd-helper" src/CMakeLists.txt
+    # ============================================================================
+    if ! grep -q "clip-models/llava.cpp" src/CMakeLists.txt; then
+        sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
+            clip-models/cogvlm.cpp\
+            clip-models/internvl.cpp\
+            clip-models/kimivl.cpp\
+            clip-models/llama4.cpp\
+            clip-models/llava.cpp\
+            clip-models/minicpmv.cpp\
+            clip-models/pixtral.cpp\
+            clip-models/qwen2vl.cpp\
+            clip-models/qwen3vl.cpp\
+            clip-models/siglip.cpp\
+            clip-models/whisper-enc.cpp|' src/CMakeLists.txt
+        echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
+    fi
 }
 echo "copy mtmd and clip from tools/mtmd/ to src"
 copy_mtmd_files
@@ -554,7 +610,7 @@ echo xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMS/llama.dSYM \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
@@ -562,7 +618,7 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMS/llama.dSYM \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
 echo "Done"
