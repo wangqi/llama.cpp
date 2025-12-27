@@ -77,6 +77,9 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/qwen3vl.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/siglip.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/whisper-enc.cpp" src/clip-models/
+    # wangqi 2025-12-26: Added new encoders from b7549 upgrade
+    cp -fp "tools/mtmd/models/conformer.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/glm4v.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -110,7 +113,9 @@ copy_mtmd_files() {
             clip-models/qwen2vl.cpp\
             clip-models/qwen3vl.cpp\
             clip-models/siglip.cpp\
-            clip-models/whisper-enc.cpp|' src/CMakeLists.txt
+            clip-models/whisper-enc.cpp\
+            clip-models/conformer.cpp\
+            clip-models/glm4v.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }

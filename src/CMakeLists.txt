@@ -151,6 +151,8 @@ add_library(llama
             clip-models/qwen3vl.cpp
             clip-models/siglip.cpp
             clip-models/whisper-enc.cpp
+            clip-models/conformer.cpp
+            clip-models/glm4v.cpp
             )
 
 set_target_properties(llama PROPERTIES
