@@ -78,6 +78,82 @@ llama.cpp/
 - Inference: `llama_decode()`, `llama_get_logits()`
 - Multimodal: `llava_load_image()`, `llava_encode_image()`
 
+## Upgrade Procedure
+
+When merging upstream llama.cpp changes, follow these steps:
+
+### 1. Check for New Vision Model Files
+
+New vision model implementations are added to `tools/mtmd/models/`. Compare with what's in the custom build script:
+
+```bash
+# List upstream vision models
+ls tools/mtmd/models/*.cpp
+
+# Check what's copied in build script
+grep "clip-models/" build-xcframework-ios.sh
+```
+
+**If new .cpp files exist in `tools/mtmd/models/`:**
+
+1. Add copy command to `copy_mtmd_files()` in `build-xcframework-ios.sh`:
+   ```bash
+   cp -fp "tools/mtmd/models/newmodel.cpp" src/clip-models/
+   ```
+
+2. Add to the sed patch section (after `clip-models/glm4v.cpp\`):
+   ```bash
+   clip-models/newmodel.cpp\
+   ```
+
+3. If `src/CMakeLists.txt` was already patched from previous build, manually add:
+   ```cmake
+   clip-models/newmodel.cpp
+   ```
+   before the closing `)` in the `add_library(llama ...)` block.
+
+4. Verify `src/clip-models/models.h` includes the struct declaration for the new model.
+
+### 2. Check for New Header Files
+
+If new headers are added to `ggml/include/` or `include/`, update `setup_framework_structure()`:
+
+```bash
+# In setup_framework_structure() function
+cp ggml/include/new-header.h ${header_path}
+```
+
+And update the module.modulemap if needed.
+
+### 3. Check for API Changes
+
+Review changes to:
+- `include/llama.h` - Main API
+- `ggml/include/ggml-backend.h` - Backend API
+- `tools/mtmd/clip.h` - Vision API
+- `tools/mtmd/mtmd.h` - Multimodal API
+
+Breaking changes require updates to the Swift bridge code in the main project.
+
+### 4. Post-Upgrade Verification
+
+```bash
+# Clean and rebuild
+rm -rf build-apple build-ios-sim build-ios-device build-macos
+./build-xcframework-ios.sh
+
+# Verify symbols
+nm -gU build-apple/llama.xcframework/ios-arm64/llama.framework/llama | grep clip
+```
+
+### Common Linker Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Undefined symbols: vtable for clip_graph_xxx` | New vision model .cpp not compiled | Add to CMakeLists.txt and sed patch |
+| `Undefined symbols: ggml_xxx` | New ggml function | Usually OK, Metal backend handles it |
+| `duplicate symbol` | File copied but also in original location | Check copy_mtmd_files paths |
+
 ## Important Notes
 
 - The project uses CMake with minimum version 3.14

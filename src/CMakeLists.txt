@@ -154,6 +154,7 @@ add_library(llama
             clip-models/whisper-enc.cpp
             clip-models/conformer.cpp
             clip-models/glm4v.cpp
+            clip-models/youtuvl.cpp
             )
 
 set_target_properties(llama PROPERTIES

@@ -1,236 +1,160 @@
-# llama.cpp Upgrade: b7402 -> b7549
+# llama.cpp Upgrade: b7549 to b7610
 
-**Upgrade Date:** 2025-12-26
-**Total Commits:** 147
-
-## Summary
-
-This upgrade brings significant performance improvements, new model support, critical bug fixes, and enhanced multimodal capabilities. The changes span across Vulkan, CUDA, Metal backends, and core inference engine improvements.
-
----
+**Upgrade Date:** 2026-01-02
+**Commits:** ~62 commits
 
 ## New Features
 
-### Model Support (iOS-Suitable, <4B Parameters)
+### New Model Support
+- **Youtu-VL Model** (#18479): Full support for Tencent's Youtu-VL multimodal model
+  - New projector type: `PROJECTOR_TYPE_YOUTUVL`
+  - Siglip2 vision encoder integration
+  - Window attention with explicit layer indexes (irregular pattern support)
+  - New tokenizer pre-type: `LLAMA_VOCAB_PRE_TYPE_YOUTU`
 
-| Model | Size | Description |
-|-------|------|-------------|
-| **LFM2-Audio-1.5B (Conformer)** | 1.5B | ASR audio encoder with conformer architecture (#18106) |
-| **GLM-ASR-Nano-2512** | ~500M | Nano-sized ASR model, fixed load error (#18130) |
-| **Granite Embedding** | <1B | Text embedding model support (#15641) |
+- **IQuestCoder** (#18524): Added conversion support for IQuestCoderForCausalLM
 
-### New Multimodal Encoders
+- **Modern-BERT Template Fix** (#18529): Removed iswa template parameter, simplified implementation
 
-| File | Purpose | Use Case |
-|------|---------|----------|
-| **conformer.cpp** | Conformer audio encoder | Speech-to-text (ASR) for LFM2-Audio models |
-| **glm4v.cpp** | GLM-4V vision encoder | Vision-language for GLM4V multimodal models |
+### Vision/Multimodal Enhancements
+- New vision model file: `youtuvl.cpp` in `tools/mtmd/models/`
+- New GGUF keys for vision models:
+  - `clip.vision.wa_layer_indexes` - explicit full attention layer specification
+  - `clip.vision.window_size` - configurable window size
+- Enhanced window attention support for irregular layer patterns
 
-### Architecture Improvements (All Model Sizes)
-
-| Feature | Description |
-|---------|-------------|
-| **LlamaBidirectionalModel** | Bidirectional attention support (#18220) |
-| **ARM64 q8_0 repack** | Optimized quantization for Apple Silicon (#18096) |
-
-### Server Enhancements
-
-- **Auto-sleep after idle** - Server can now auto-sleep after N seconds of idle (#18228)
-- **Stop-timeout option for router** - Better control of shutdown (#18350)
-- **Preset-only options** - Load model on startup with preset support (#18206)
-- **Webui configuration** - New `--webui-config` option (#18028)
-- **Router child process SSL disable** - Better security control (#18141)
-- **Return progress at 0%** - Report processing state more accurately (#18305)
-- **Editing attachments in user messages** - Improved webui functionality (#18147)
-
-### New API Functions
-
-```c
-LLAMA_API bool llama_params_fit(...);          // New: Parameter fitting
-LLAMA_API size_t llama_max_tensor_buft_overrides(void);  // New: Tensor buffer overrides
-LLAMA_API void llama_log_get(...);             // New: Get current log callback
-```
-
----
-
-## Performance Improvements
-
-### Vulkan Backend
-
-| Improvement | Description |
-|-------------|-------------|
-| **mul_mat_id optimization** | Preprocess experts and discard workgroups more quickly (#18352) |
-| **decodeFuncB optimization** | Coopmat2 mul_mat_id shader optimization (#18349) |
-| **BK=32 for coopmat2** | Better block size for mul_mat_id (#18332) |
-| **Small dequantization improvements** | General dequant performance (#18380) |
-| **Fewer FA rows for small cache** | Flash attention optimization (#18280) |
-| **ADD operations grouping** | Graph optimization improvement (#18060) |
-| **Perf logger with concurrency** | New performance monitoring mode (#17944) |
-
-### CUDA Backend
-
-| Improvement | Description |
-|-------------|-------------|
-| **cumsum CUB path optimization** | Better cumulative sum performance (#18362) |
-| **cumsum fallback kernel optimization** | Improved fallback path (#18343) |
-| **Native MXFP4 support (Blackwell)** | Experimental 4-bit support for latest GPUs (#17906) |
-
-### CPU Backend
-
-| Improvement | Description |
-|-------------|-------------|
-| **RVV floating-point kernels** | RISC-V vector extension support (#17318) |
-| **RVV sgemm kernels** | Llamafile RISC-V support (#18199) |
-| **ARM64 q8_0 repack** | dotprod and i8mm optimizations (#18096) |
-
----
+### Metal Backend
+- **COUNT_EQUAL Operation** (#18314): Added Metal implementation for count_equal op
+- Updated SSM_CONV test configurations with new kernel sizes
+- SOFT_MAX support for larger tensors (200001 elements)
+- Removed BLAS support from Metal documentation (clarification)
 
 ## Bug Fixes
 
 ### Critical Fixes
+- **CUDA Large Tensor Copy** (#18433): Fixed assertion failure `ggml_nbytes <= INT_MAX`
+  - Changed data types from `int` to `int64_t` in copy kernels
+  - Affects: `cpy_scalar`, `cpy_f32_q`, `cpy_q_f32`, and related functions
+  - Prevents crashes when processing large tensors
 
-| Fix | Impact |
-|-----|--------|
-| **Server crash on seq_rm failure** | Hybrid/recurrent models crash fix (#18391) |
-| **Server crash without BOS/EOS** | Model loading crash fix (#18321) |
-| **Data race in HTTP threads** | Thread safety fix (#18263) |
-| **Data race in to_json_anthropic** | Thread safety fix (#18283) |
-| **RPC -fit compatibility** | Remote procedure call fix (#18233) |
-| **Vulkan event_wait corruption** | Command buffer corruption fix (#18302) |
+- **DeepSeek2 Expert Weights Scale** (#18479): Made `expert_weights_scale` optional
+  - `LLM_KV_EXPERT_WEIGHTS_SCALE` now has `optional=false` changed to `optional=true`
+  - Fixes loading of non-MoE models using DeepSeek2 architecture
 
-### Backend Fixes
+### Other Fixes
+- **RPC Performance**: Use `unordered_map::reserve` and `emplace` for better performance (#18513)
+- Fixed tied embeddings handling for output layer in DeepSeek2 models
 
-| Fix | Backend |
-|-----|---------|
-| **Regex for arch list** | CUDA (#18371) |
-| **Blackwell native builds** | CUDA (#18361) |
-| **im2col overflow** | Vulkan (#18180) |
-| **topk_moe with exp_probs_b** | Vulkan/CUDA (#18071) |
-| **Rope with large number of rows** | Vulkan (#18306) |
+## API Changes
 
----
+### Potentially Breaking
+- **ggml_backend_compare_graph_backend()**: Signature changed
+  ```c
+  // Old:
+  ggml_backend_compare_graph_backend(..., struct ggml_tensor * test_node);
 
-## iOS/Metal Specific Changes
+  // New:
+  ggml_backend_compare_graph_backend(..., struct ggml_tensor const * const * test_nodes, size_t num_test_nodes);
+  ```
+  - Now accepts array of test nodes instead of single node
 
-### Relevant for iOS Builds
+### New APIs
+- `add_vision_wa_layer_indexes()` - Set explicit full attention layers
+- `add_vision_window_size()` - Set window attention size
 
-1. **No breaking changes to Metal backend** - The Metal backend remains stable
-2. **New vision model files** need to be included in custom builds:
-   - `conformer.cpp` (new - for ASR support)
-   - `glm4v.cpp` (new - for GLM model support)
-3. **XCFramework workflow update** - Release workflow now stores XCFramework as Zip file (#18284)
+## Build System Changes
 
-### Multimodal (mtmd) Changes
-
-- Updated mtmd context handling for server (#18106)
-- Vision capability detection improvements in webui
-- No API changes to clip.h or mtmd.h
-
----
-
-## Build Script Changes Required
-
-### New Vision Model Files to Include
-
-The following files are **new** since b7402 and need to be added to `build-xcframework-ios.sh`:
-
-```bash
-# In copy_mtmd_files() function, add:
-cp -fp "tools/mtmd/models/conformer.cpp" src/clip-models/
-cp -fp "tools/mtmd/models/glm4v.cpp" src/clip-models/
-
-# In sed patch for CMakeLists.txt, add to the list:
-clip-models/conformer.cpp
-clip-models/glm4v.cpp
-```
-
-### Header Updates
-
-No new required headers for the framework. The current headers remain:
-- `ggml-opt.h` (already included in both scripts)
+- Added `<filesystem>` include in some components
+- SYCL CMakeLists.txt: Added newline at end of file (#18503)
+- KleidiAI SVE kernel additions for ARM
 
 ---
 
 ## Risk Assessment
 
-### High Risk
+### HIGH RISK
+1. **API Breaking Change**: `ggml_backend_compare_graph_backend()` signature change
+   - **Impact**: If you use this API directly, code will fail to compile
+   - **Mitigation**: Update call sites to pass array and count instead of single tensor
 
-| Risk | Description | Mitigation |
-|------|-------------|------------|
-| **Missing vision models** | New `conformer.cpp` and `glm4v.cpp` not in build script | Update `copy_mtmd_files()` function |
-| **API signature changes** | `llama_log_set` API changed, new `llama_log_get` added | Verify app code doesn't use old patterns |
+### MEDIUM RISK
+1. **CUDA int64_t Changes**: Large tensor handling changes in CUDA copy operations
+   - **Impact**: Should be backward compatible, but watch for edge cases
+   - **Mitigation**: Test with large context models
 
-### Medium Risk
+2. **Vision Model Changes**: New YouTuVL projector type and window attention patterns
+   - **Impact**: New models may not work without updated mmproj files
+   - **Mitigation**: Regenerate mmproj GGUF files if using custom vision models
 
-| Risk | Description | Mitigation |
-|------|-------------|------------|
-| **Server behavior changes** | Auto-sleep, preset handling changed | Test server functionality if used |
-| **Performance regression** | New optimizations may affect some models | Benchmark key models before release |
+### LOW RISK
+1. **Metal COUNT_EQUAL**: New operation that wasn't previously supported
+   - **Impact**: Should be additive/backward compatible
 
-### Low Risk
-
-| Risk | Description | Mitigation |
-|------|-------------|------------|
-| **Vulkan backend changes** | Many Vulkan optimizations (not used on iOS) | N/A for iOS builds |
-| **CUDA backend changes** | CUDA improvements (not used on iOS) | N/A for iOS builds |
-| **New model architectures** | New models may not work with older builds | Test specific models if needed |
-
----
-
-## Recommended Actions Before Release
-
-1. **Update build script** - Add new vision model files (conformer.cpp, glm4v.cpp)
-2. **Rebuild XCFramework** - Run `./build-xcframework-ios.sh`
-3. **Test key models** - Verify inference works correctly:
-   - Text-only models (Llama, Qwen)
-   - Vision models (LLaVA, Qwen2VL)
-4. **Check for API usage** - Verify app doesn't call `llama_log_set` with old signature
-5. **Benchmark performance** - Compare inference speed with previous build
+2. **DeepSeek2 Architecture Changes**: Optional expert_weights_scale
+   - **Impact**: Allows loading more models, backward compatible
 
 ---
 
-## Changelog Highlights (Condensed)
+## Build Script Updates Required
 
-```
-vulkan: preprocess mul_mat_id experts optimization (#18352)
-vulkan: optimize decodeFuncB in coopmat2 (#18349)
-server: fix crash when seq_rm fails (#18391)
-cuda: optimize cumsum cub path (#18362)
-model: support MiMo-V2-Flash (#18328)
-model: support LlamaBidirectionalModel (#18220)
-model: add ASR support for LFM2-Audio-1.5B (#18106)
-server: add auto-sleep after N seconds (#18228)
-llama: Async DirectIO model loading on Linux (#18012)
-ggml-cpu: ARM64 q8_0 repack optimization (#18096)
-webui: Add editing attachments (#18147)
+### Required Changes to `build-xcframework-ios.sh`
+
+The custom build script needs to add the new `youtuvl.cpp` vision model file:
+
+```bash
+# In copy_mtmd_files() function, add after glm4v.cpp:
+cp -fp "tools/mtmd/models/youtuvl.cpp" src/clip-models/
+
+# Also update the sed patch section to include it:
+clip-models/youtuvl.cpp\
 ```
 
+### Comparison Summary: Official vs Custom Script
+
+| Feature | Official | Custom | Action Needed |
+|---------|----------|--------|---------------|
+| youtuvl.cpp | Yes | **No** | **ADD** |
+| conformer.cpp | Yes | Yes | OK |
+| glm4v.cpp | Yes | Yes | OK |
+| -O3 optimization | No | Yes | Keep custom |
+| ggml-opt.h header | Yes | Yes | OK |
+| visionOS/tvOS builds | Yes | Commented out | Keep as-is |
+| clip.h/mtmd.h headers | No | Yes | Keep custom |
+
+### Recommended Script Update
+
+Add the following line to `copy_mtmd_files()` function after the `glm4v.cpp` copy:
+
+```bash
+# wangqi 2026-01-02: Added new vision encoder from b7610 upgrade
+cp -fp "tools/mtmd/models/youtuvl.cpp" src/clip-models/
+```
+
+And update the sed patch to include it in the CMakeLists.txt patching section.
+
 ---
 
-## Script Comparison: build-xcframework.sh vs build-xcframework-ios.sh
+## Testing Recommendations
 
-### Key Differences
+1. **Build Verification**
+   - Run `./build-xcframework-ios.sh` after applying updates
+   - Verify framework symbols: `nm -gU build-apple/llama.xcframework/ios-arm64/llama.framework/llama | grep clip`
 
-| Aspect | Official Script | Custom Script (iOS) |
-|--------|-----------------|---------------------|
-| **Optimization flags** | `-g` only | `-O3 -fno-finite-math-only -g` |
-| **Platforms built** | All (iOS, macOS, visionOS, tvOS) | iOS + macOS only |
-| **mtmd files** | Not included | Copied from tools/mtmd to src |
-| **Vision model headers** | Not in framework | clip.h, mtmd.h, mtmd-helper.h included |
-| **Release optimization** | Default | `-DCMAKE_C_FLAGS_RELEASE="-O3 ..."` |
+2. **Runtime Testing**
+   - Test existing vision models (LLaVA, Qwen2-VL) still work
+   - Test large context inference (>32K tokens) to verify CUDA fixes don't affect Metal
 
-### Changes Needed in Custom Script
+3. **Model Compatibility**
+   - Verify existing GGUF models load correctly
+   - Test any DeepSeek-based models
 
-1. Add new vision model files to `copy_mtmd_files()`:
-   ```bash
-   cp -fp "tools/mtmd/models/conformer.cpp" src/clip-models/
-   cp -fp "tools/mtmd/models/glm4v.cpp" src/clip-models/
-   ```
+## Files Changed (Key iOS-Relevant)
 
-2. Update sed patch for CMakeLists.txt to include:
-   ```bash
-   clip-models/conformer.cpp\
-   clip-models/glm4v.cpp\
-   ```
-
-No other structural changes required to the custom build script.
+- `ggml/include/ggml-backend.h` - API change
+- `ggml/src/ggml-metal/ggml-metal.m` - COUNT_EQUAL op
+- `tools/mtmd/clip.cpp` - YouTuVL support
+- `tools/mtmd/clip-impl.h` - New defines
+- `tools/mtmd/clip-model.h` - New hparams field
+- `tools/mtmd/models/youtuvl.cpp` - **NEW FILE**
+- `src/llama-model.cpp` - Model loading changes
+- `src/llama-vocab.cpp` - Youtu tokenizer

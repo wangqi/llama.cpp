@@ -80,6 +80,8 @@ copy_mtmd_files() {
     # wangqi 2025-12-26: Added new encoders from b7549 upgrade
     cp -fp "tools/mtmd/models/conformer.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/glm4v.cpp" src/clip-models/
+    # wangqi 2026-01-02: Added new vision encoder from b7610 upgrade
+    cp -fp "tools/mtmd/models/youtuvl.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -101,7 +103,8 @@ copy_mtmd_files() {
     # TO DEBUG: Check src/CMakeLists.txt after build fails to see actual format.
     #           Run: grep -n "mtmd-helper" src/CMakeLists.txt
     # ============================================================================
-    if ! grep -q "clip-models/llava.cpp" src/CMakeLists.txt; then
+    # Check for the LAST model in our list to ensure patch is up-to-date
+    if ! grep -q "clip-models/youtuvl.cpp" src/CMakeLists.txt; then
         sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
             clip-models/cogvlm.cpp\
             clip-models/internvl.cpp\
@@ -115,7 +118,8 @@ copy_mtmd_files() {
             clip-models/siglip.cpp\
             clip-models/whisper-enc.cpp\
             clip-models/conformer.cpp\
-            clip-models/glm4v.cpp|' src/CMakeLists.txt
+            clip-models/glm4v.cpp\
+            clip-models/youtuvl.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }
