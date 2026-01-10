@@ -154,6 +154,9 @@ rm -rf build-apple
 rm -rf build-ios-sim
 rm -rf build-ios-device
 rm -rf build-macos
+rm -rf build-maccatalyst
+rm -rf build-maccatalyst-arm64
+rm -rf build-maccatalyst-x86_64
 # rm -rf build-visionos
 # rm -rf build-visionos-sim
 # rm -rf build-tvos-sim
@@ -163,7 +166,7 @@ rm -rf build-macos
 setup_framework_structure() {
     local build_dir=$1
     local min_os_version=$2
-    local platform=$3  # "ios", "macos", "visionos", or "tvos"
+    local platform=$3  # "ios", "macos", "maccatalyst", "visionos", or "tvos"
     local framework_name="llama"
 
     echo "Creating ${platform}-style framework structure for ${build_dir}"
@@ -254,6 +257,17 @@ EOF
         <integer>2</integer>
     </array>'
             ;;
+        "maccatalyst")
+            platform_name="macosx"
+            sdk_name="macosx${MACOS_MIN_OS_VERSION}"
+            supported_platform="MacOSX"
+            local plist_path="${build_dir}/framework/${framework_name}.framework/Info.plist"
+            local device_family='    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>'
+            ;;
         "macos")
             platform_name="macosx"
             sdk_name="macosx${min_os_version}"
@@ -321,7 +335,7 @@ EOF
 combine_static_libraries() {
     local build_dir="$1"
     local release_dir="$2"
-    local platform="$3"  # "ios", "macos", "visionos", or "tvos"
+    local platform="$3"  # "ios", "macos", "maccatalyst", "visionos", or "tvos"
     local is_simulator="$4"
     local base_dir="$(pwd)"
     local framework_name="llama"
@@ -332,7 +346,7 @@ combine_static_libraries() {
         # macOS uses versioned structure
         output_lib="${build_dir}/framework/${framework_name}.framework/Versions/A/${framework_name}"
     else
-        # iOS, visionOS, and tvOS use a directory flat structure
+        # iOS, Mac Catalyst, visionOS, and tvOS use a directory flat structure
         output_lib="${build_dir}/framework/${framework_name}.framework/${framework_name}"
     fi
 
@@ -370,6 +384,13 @@ combine_static_libraries() {
                 archs="arm64"
                 min_version_flag="-mios-version-min=${IOS_MIN_OS_VERSION}"
             fi
+            install_name="@rpath/llama.framework/llama"
+            ;;
+        "maccatalyst")
+            sdk="macosx"
+            archs="arm64 x86_64"
+            # Mac Catalyst: will build each arch separately and lipo them
+            min_version_flag=""
             install_name="@rpath/llama.framework/llama"
             ;;
         "macos")
@@ -414,22 +435,61 @@ combine_static_libraries() {
 
     # Create dynamic library
     echo "Creating dynamic library for ${platform}."
-    xcrun -sdk $sdk clang++ -dynamiclib \
-        -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
-        $arch_flags \
-        $min_version_flag \
-        -Wl,-force_load,"${temp_dir}/combined.a" \
-        -framework Foundation -framework Metal -framework Accelerate \
-        -install_name "$install_name" \
-        -o "${base_dir}/${output_lib}"
+
+    # Mac Catalyst requires special handling: libraries are already universal (built separately)
+    if [[ "$platform" == "maccatalyst" ]]; then
+        echo "Creating Mac Catalyst universal binary (libraries already contain both architectures)..."
+        # The static libraries were already built with -macabi flags and combined with lipo
+        # Need to link with -target flags for each architecture
+        local catalyst_arm64_lib="${temp_dir}/libllama_arm64.dylib"
+        local catalyst_x86_64_lib="${temp_dir}/libllama_x86_64.dylib"
+
+        echo "Linking arm64 Mac Catalyst binary..."
+        xcrun -sdk $sdk clang++ -dynamiclib \
+            -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
+            -arch arm64 \
+            -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi \
+            -Wl,-force_load,"${temp_dir}/combined.a" \
+            -framework Foundation -framework Metal -framework Accelerate \
+            -install_name "$install_name" \
+            -o "${catalyst_arm64_lib}"
+
+        echo "Linking x86_64 Mac Catalyst binary..."
+        xcrun -sdk $sdk clang++ -dynamiclib \
+            -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
+            -arch x86_64 \
+            -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi \
+            -Wl,-force_load,"${temp_dir}/combined.a" \
+            -framework Foundation -framework Metal -framework Accelerate \
+            -install_name "$install_name" \
+            -o "${catalyst_x86_64_lib}"
+
+        echo "Creating universal Mac Catalyst binary with lipo..."
+        xcrun lipo -create "${catalyst_arm64_lib}" "${catalyst_x86_64_lib}" -output "${base_dir}/${output_lib}"
+    else
+        # Standard build for other platforms
+        xcrun -sdk $sdk clang++ -dynamiclib \
+            -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
+            $arch_flags \
+            $min_version_flag \
+            -Wl,-force_load,"${temp_dir}/combined.a" \
+            -framework Foundation -framework Metal -framework Accelerate \
+            -install_name "$install_name" \
+            -o "${base_dir}/${output_lib}"
+    fi
 
     # Platform-specific post-processing for device builds
-    if [[ "$is_simulator" == "false" ]]; then
+    if [[ "$is_simulator" == "false" ]] || [[ "$platform" == "maccatalyst" ]]; then
         if command -v xcrun vtool &>/dev/null; then
             case "$platform" in
                 "ios")
                     echo "Marking binary as a framework binary for iOS..."
                     xcrun vtool -set-build-version ios ${IOS_MIN_OS_VERSION} ${IOS_MIN_OS_VERSION} -replace \
+                        -output "${base_dir}/${output_lib}" "${base_dir}/${output_lib}"
+                    ;;
+                "maccatalyst")
+                    echo "Marking binary as a framework binary for Mac Catalyst..."
+                    xcrun vtool -set-build-version maccatalyst ${IOS_MIN_OS_VERSION} ${IOS_MIN_OS_VERSION} -replace \
                         -output "${base_dir}/${output_lib}" "${base_dir}/${output_lib}"
                     ;;
                 "visionos")
@@ -459,8 +519,8 @@ combine_static_libraries() {
     # Create a separate directory for dSYMs for all platforms
     mkdir -p "${base_dir}/${build_dir}/dSYMs"
 
-    # iOS and visionOS style dSYM (flat structure)
-    if [[ "$platform" == "ios" || "$platform" == "visionos" || "$platform" == "tvos" ]]; then
+    # iOS, Mac Catalyst, visionOS and tvOS style dSYM (flat structure)
+    if [[ "$platform" == "ios" || "$platform" == "maccatalyst" || "$platform" == "visionos" || "$platform" == "tvos" ]]; then
         # Generate dSYM in the dSYMs directory
         xcrun dsymutil "${base_dir}/${output_lib}" -o "${base_dir}/${build_dir}/dSYMs/llama.dSYM"
 
@@ -535,6 +595,105 @@ cmake -B build-macos -G Xcode \
    -S .
 cmake --build build-macos --config Release -- -quiet
 
+echo "Building for Mac Catalyst..."
+# Mac Catalyst requires special handling - use Unix Makefiles and set target at build time
+
+# Build for arm64 Catalyst
+export CFLAGS="${COMMON_C_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+export CXXFLAGS="${COMMON_CXX_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+export ASMFLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+
+cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_SYSROOT=macosx \
+    -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_ASM_FLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
+    -DCMAKE_CODE_SIGNING_REQUIRED=NO \
+    -DCMAKE_CODE_SIGN_IDENTITY="" \
+    -DCMAKE_CODE_SIGNING_ALLOWED=NO \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF \
+    -DLLAMA_BUILD_TOOLS=OFF \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_SERVER=OFF \
+    -DGGML_METAL_EMBED_LIBRARY=ON \
+    -DGGML_BLAS_DEFAULT=ON \
+    -DGGML_METAL=ON \
+    -DGGML_METAL_USE_BF16=ON \
+    -DGGML_NATIVE=OFF \
+    -DGGML_OPENMP=OFF \
+    -DLLAMA_CURL=OFF \
+    -S .
+cmake --build build-maccatalyst-arm64 --config Release
+
+# Build for x86_64 Catalyst
+export CFLAGS="${COMMON_C_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+export CXXFLAGS="${COMMON_CXX_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+export ASMFLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+
+cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_SYSROOT=macosx \
+    -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+    -DCMAKE_ASM_FLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
+    -DCMAKE_CODE_SIGNING_REQUIRED=NO \
+    -DCMAKE_CODE_SIGN_IDENTITY="" \
+    -DCMAKE_CODE_SIGNING_ALLOWED=NO \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF \
+    -DLLAMA_BUILD_TOOLS=OFF \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_SERVER=OFF \
+    -DGGML_METAL_EMBED_LIBRARY=ON \
+    -DGGML_BLAS_DEFAULT=ON \
+    -DGGML_METAL=ON \
+    -DGGML_METAL_USE_BF16=ON \
+    -DGGML_NATIVE=OFF \
+    -DGGML_OPENMP=OFF \
+    -DLLAMA_CURL=OFF \
+    -S .
+cmake --build build-maccatalyst-x86_64 --config Release
+
+unset CFLAGS
+unset CXXFLAGS
+unset ASMFLAGS
+
+# Combine the two architectures using lipo
+# Unix Makefiles puts libraries directly in src/ not src/Release/
+mkdir -p build-maccatalyst/src/Release
+mkdir -p build-maccatalyst/ggml/src/Release
+mkdir -p build-maccatalyst/ggml/src/ggml-metal/Release
+mkdir -p build-maccatalyst/ggml/src/ggml-blas/Release
+
+lipo -create \
+    build-maccatalyst-arm64/src/libllama.a \
+    build-maccatalyst-x86_64/src/libllama.a \
+    -output build-maccatalyst/src/Release/libllama.a
+
+lipo -create \
+    build-maccatalyst-arm64/ggml/src/libggml.a \
+    build-maccatalyst-x86_64/ggml/src/libggml.a \
+    -output build-maccatalyst/ggml/src/Release/libggml.a
+
+lipo -create \
+    build-maccatalyst-arm64/ggml/src/libggml-base.a \
+    build-maccatalyst-x86_64/ggml/src/libggml-base.a \
+    -output build-maccatalyst/ggml/src/Release/libggml-base.a
+
+lipo -create \
+    build-maccatalyst-arm64/ggml/src/libggml-cpu.a \
+    build-maccatalyst-x86_64/ggml/src/libggml-cpu.a \
+    -output build-maccatalyst/ggml/src/Release/libggml-cpu.a
+
+lipo -create \
+    build-maccatalyst-arm64/ggml/src/ggml-metal/libggml-metal.a \
+    build-maccatalyst-x86_64/ggml/src/ggml-metal/libggml-metal.a \
+    -output build-maccatalyst/ggml/src/ggml-metal/Release/libggml-metal.a
+
+lipo -create \
+    build-maccatalyst-arm64/ggml/src/ggml-blas/libggml-blas.a \
+    build-maccatalyst-x86_64/ggml/src/ggml-blas/libggml-blas.a \
+    -output build-maccatalyst/ggml/src/ggml-blas/Release/libggml-blas.a
 
 # echo "Building for visionOS..."
 # cmake -B build-visionos -G Xcode \
@@ -596,6 +755,7 @@ echo "Setting up framework structures..."
 setup_framework_structure "build-ios-sim" ${IOS_MIN_OS_VERSION} "ios"
 setup_framework_structure "build-ios-device" ${IOS_MIN_OS_VERSION} "ios"
 setup_framework_structure "build-macos" ${MACOS_MIN_OS_VERSION} "macos"
+setup_framework_structure "build-maccatalyst" ${IOS_MIN_OS_VERSION} "maccatalyst"
 #setup_framework_structure "build-visionos" ${VISIONOS_MIN_OS_VERSION} "visionos"
 #setup_framework_structure "build-visionos-sim" ${VISIONOS_MIN_OS_VERSION} "visionos"
 #setup_framework_structure "build-tvos-sim" ${TVOS_MIN_OS_VERSION} "tvos"
@@ -606,6 +766,7 @@ echo "Creating dynamic libraries from static libraries..."
 combine_static_libraries "build-ios-sim" "Release-iphonesimulator" "ios" "true"
 combine_static_libraries "build-ios-device" "Release-iphoneos" "ios" "false"
 combine_static_libraries "build-macos" "Release" "macos" "false"
+combine_static_libraries "build-maccatalyst" "Release" "maccatalyst" "false"
 #combine_static_libraries "build-visionos" "Release-xros" "visionos" "false"
 #combine_static_libraries "build-visionos-sim" "Release-xrsimulator" "visionos" "true"
 #combine_static_libraries "build-tvos-sim" "Release-appletvsimulator" "tvos" "true"
@@ -620,6 +781,8 @@ echo xcodebuild -create-xcframework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
     -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
+    -framework $(pwd)/build-maccatalyst/framework/llama.framework \
+    -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
@@ -628,6 +791,8 @@ xcodebuild -create-xcframework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
     -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
+    -framework $(pwd)/build-maccatalyst/framework/llama.framework \
+    -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
 echo "Done"
