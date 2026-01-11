@@ -130,6 +130,15 @@ poetry.toml
 # Local scripts
 /run-vim.sh
 /run-chat.sh
+/run-spec.sh
+/.ccache/
+
+# IDE
+/*.code-workspace
+/.windsurf/
+examples/batched.swift/build
+# emscripten
+a.out.*
 
 # Ignore copied files
 src/clip.cpp
@@ -141,15 +150,6 @@ src/mtmd.cpp
 src/mtmd.h
 src/mtmd-audio.cpp
 src/mtmd-audio.h
-/.ccache/
 src/clip-graph.h
 src/clip-model.h
 src/clip-models/
-
-# IDE
-/*.code-workspace
-/.windsurf/
-examples/batched.swift/build
-# emscripten
-a.out.*
-
