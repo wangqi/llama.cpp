@@ -1,387 +1,313 @@
-# llama.cpp Upgrade: tag-b7610 → tag-b7703
+# llama.cpp Upgrade: tag-b7703 → tag-b7783
 
-**Upgrade Date:** January 11, 2026
-**Commits:** 94 commits (from b7672 to b7703)
-**Previous Version:** tag-b7610 (b7672-1-gc8e8248cd)
-**Current Version:** tag-b7703 (b7703-64-g4e0ab82fc)
-
----
-
-## 🎯 Major Features
-
-### 1. Backend Sampling Support [EXPERIMENTAL] (#17004)
-- **Description:** Offloads sampling operations to GPU backends (Metal, CUDA, Vulkan)
-- **Impact:** Potential performance improvements for sampling on Apple Silicon
-- **API Changes:**
-  - New `llama_sampler_seq_config` struct for per-sequence sampler configuration
-  - Added `samplers` and `n_samplers` fields to `llama_context_params`
-  - Extended `llama_sampler_i` interface with backend-specific methods:
-    - `backend_init()` - Initialize backend support
-    - `backend_apply()` - Apply sampling on backend
-    - `backend_accept()` - Accept sampled token
-    - `backend_set_input()` - Set input for current batch
-  - New API functions:
-    - `llama_set_sampler()` - Attach sampler to context
-    - `llama_get_sampled_token_ith()` - Get backend-sampled token
-    - `llama_get_sampled_probs_ith()` - Get backend probabilities
-    - `llama_get_sampled_logits_ith()` - Get backend logits
-    - `llama_get_sampled_candidates_ith()` - Get backend candidates
-- **iOS/macOS Benefit:** Metal backend can potentially accelerate sampling operations
-- **Risk Level:** 🟡 Medium (experimental API, interface changes)
-
-### 2. Direct I/O Support (#18166)
-- **Description:** Added `use_direct_io` flag for model loading to bypass page cache
-- **Impact:** Reduces memory pressure during model loading
-- **API Changes:**
-  - New boolean field `use_direct_io` in `llama_model_params`
-  - Takes precedence over `use_mmap` when enabled
-- **iOS/macOS Benefit:** Better memory management on memory-constrained devices
-- **Risk Level:** 🟢 Low (optional feature, backward compatible)
-
-### 3. Gemma3n Multimodal Support with MobileNetV5 Vision Encoder (#18256)
-- **Description:** Added support for Gemma3n models with MobileNetV5 vision encoder
-- **New Files:**
-  - `tools/mtmd/models/mobilenetv5.cpp` (451 lines)
-  - Multi-Scale Fusion Adapter (MSFA) implementation
-  - Edge Residual Blocks and Universal Inverted Residual Blocks
-  - Multi-Query Attention (MQA) for vision
-- **iOS/macOS Impact:** Mobile-optimized vision encoder suitable for on-device inference
-- **Risk Level:** 🟢 Low (new feature, doesn't affect existing models)
-- **⚠️ ACTION REQUIRED:** Add `mobilenetv5.cpp` to `build-xcframework-ios.sh`
+**Upgrade Date:** January 20, 2026
+**Commits:** 81 commits
+**Platforms:** iOS 16.4+, macOS 13.3+
 
 ---
 
-## 🔧 Metal Backend Optimizations
+## Executive Summary
 
-### Performance Improvements
-1. **MoE Kernel Specialization** (#18667)
-   - Added specialized Metal kernel for `ne20=5` in Mixture of Experts models
-   - Improves MoE model inference on Apple Silicon
+This upgrade from tag-b7703 to tag-b7783 brings **81 commits** with improvements to Metal performance, bug fixes for memory management and mmap handling, and a new adaptive-p sampler. **No new vision models** were added in this range, so our custom build script requires **no changes**.
 
-2. **Flash Attention Buffer Optimization** (#18545)
-   - Adjusted extra buffer size to avoid reallocations during Flash Attention
-   - Reduces memory fragmentation and improves performance
+### Key Highlights
 
-3. **Top-K Sampling on Metal**
-   - Added Metal backend support for top-k sampling operation
-   - Enables GPU-accelerated sampling
-
-4. **Thread Group Sizing**
-   - Capped thread group size in `set_rows` operation for better GPU utilization
+✅ **Performance**: Metal Flash Attention optimized for MLA heads, improved KV-cache mask construction
+✅ **Stability**: Fixed critical memory reservation and mmap direct-io bugs
+✅ **API**: New adaptive-p sampler, deprecated llama_adapter_lora_free
+✅ **MTMD**: Fixed ASR for LFM2.5-Audio-1.5B, cleaned up CLIP callback mechanism
 
 ---
 
-## 🧩 New Model Support
+## 1. iOS/macOS Platform Changes
 
-1. **Qwen3 Next** (#18683)
-   - Improved implementation with simplified QKV projection
-   - Optimized chunking and reduced redundant operations
-   - Added `ATTN_QKV` and `ATTN_GATE` tensor support
+### Metal Backend Improvements
 
-2. **DeepSeek V3** (#11049)
-   - Added support for DeepSeek V3 architecture
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `271191906` | **Metal: Enable FA for MLA heads** | ⚡ Performance improvement for multi-latent attention models |
+| `388ce8224` | **ggml: Extend ggml_pool_1d + metal** | New pooling operation support for Metal |
+| `7d587e554` | **ggml-metal: Fix header copying for embedded** | Build system fix (doesn't affect our build) |
 
-3. **PhiMoE** (#11003)
-   - Added support for PhiMoE (Phi Mixture of Experts) architecture
+**Performance Impact:** Flash Attention optimization for MLA (multi-latent attention) heads improves inference speed for models using this architecture pattern.
 
-4. **Cohere2** (#10900)
-   - Added support for Cohere2 model architecture
+### Multimodal (MTMD/CLIP) Changes
 
-5. **QRWKV6** (#11001)
-   - Added support for QRWKV6 (Quantized RWKV6) models
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `c945aaaef` | **mtmd: Fix ASR for LFM2.5-Audio-1.5B** | 🐛 Critical fix for audio speech recognition |
+| `d98b54812` | **Restore clip's cb() to its rightful glory** | 🔧 Refactored CLIP callback mechanism, extracted common debug code |
+| `e047f9ee9` | **mtmd: Fix use_non_causal being reported incorrectly** | 🐛 Fixed incorrect causal attention reporting |
 
-6. **Maincoder-1B** (#18534)
-   - Added support for Maincoder-1B code generation model
-
-7. **Falcon3** (#10883)
-   - Added support for Falcon3 architecture
-
-8. **InfiniAI Megrez 3b** (#10893)
-   - Added support for InfiniAI Megrez 3b model
-
-9. **Llama-3_1-Nemotron-51B** (#10669)
-   - Added support for Llama-3.1-Nemotron-51B
+**Vision Models Status:** ✅ No new vision models added. Our build script already includes all models:
+- cogvlm, internvl, kimivl, llama4, llava, minicpmv, pixtral, qwen2vl, qwen3vl, siglip
+- whisper-enc, conformer, glm4v, youtuvl, mobilenetv5
 
 ---
 
-## 📊 API Changes & Additions
+## 2. API Changes
 
-### New Functions
-- `llama_model_n_embd_out()` - Get output embedding dimension
-- `llama_sampler_chain_get()` - Enhanced to return chain itself when `i == -1`
-- Backend sampling API (see Backend Sampling section above)
+### New APIs
 
-### Modified Functions
-- `llama_model_fit_context()` - Changed `margin` parameter to `margins[]` array
-  - **Breaking Change:** Now requires array of margins per device instead of single value
-  - **Risk:** 🟡 Medium - requires code changes if using this function
+#### llama_sampler_init_adaptive_p
 
-### Sampler Interface Changes
-- `llama_sampler_i.iface` changed from `const` to mutable
-- Added backend-specific methods to sampler interface
-- `llama_sampler_init()` now takes mutable `llama_sampler_i*` instead of `const`
+**Added in:** `13f1e4a9c`
 
----
+```c
+LLAMA_API struct llama_sampler * llama_sampler_init_adaptive_p(
+    float   target,    // Target probability (0.0 - 1.0)
+    float   decay,     // EMA decay (0.0 - 0.99)
+    uint32_t seed      // RNG seed
+);
+```
 
-## 🔄 Multimodal (MTMD) Updates
+**Purpose:** Adaptive-p sampler maintains a configurable target probability over time using exponential moving average. Must be last in sampler chain (like mirostat).
 
-### Vision Model Changes
-1. **SIGLIP Input Norm Made Optional** (#18594)
-   - Input norm now optional for LFM2-VL compatibility
-   - Checks for `mm_input_norm_w` and `mm_input_norm_b` before applying
+**Recommendation:** Combine with min-p for best results: `min_p → adaptive_p`
 
-2. **Audio Streaming ISTFT** (#18645)
-   - Added `mtmd_audio_streaming_istft` for real-time audio processing
+### Deprecated APIs
 
-3. **Vision Model File Count:** 15 files total
-   - cogvlm.cpp
-   - conformer.cpp
-   - glm4v.cpp
-   - internvl.cpp
-   - kimivl.cpp
-   - llama4.cpp
-   - llava.cpp
-   - minicpmv.cpp
-   - **mobilenetv5.cpp** ⚠️ NEW - Not yet in build script
-   - pixtral.cpp
-   - qwen2vl.cpp
-   - qwen3vl.cpp
-   - siglip.cpp
-   - whisper-enc.cpp
-   - youtuvl.cpp
+#### llama_adapter_lora_free
+
+**Deprecated in:** Tag range (exact commit not identified)
+
+```c
+LLAMA_API DEPRECATED(void llama_adapter_lora_free(struct llama_adapter_lora * adapter),
+    "adapters are now freed together with the associated model");
+```
+
+**Migration:** Remove manual `llama_adapter_lora_free()` calls. Adapters are automatically freed when the model is deleted.
+
+**Risk:** ⚠️ LOW - If our code doesn't call this function, no action needed.
 
 ---
 
-## 🛠️ Tools & Examples
+## 3. Performance Optimizations
 
-### Removed
-- `llama-run` tool removed (#18661)
-  - **Impact:** None for iOS (not used in mobile builds)
+| Area | Commit | Description | Platform Impact |
+|------|--------|-------------|-----------------|
+| **KV-Cache** | `2fbde785b` | Optimize KQ mask construction | All platforms |
+| **BLAS CPU** | `8cc0ba957` | Optimize ggml_vec_dot_bf16 for Power9 | Not applicable (iOS/macOS use Metal) |
+| **Memory** | `be8e3d951` | Don't reserve scheduler for warmups | iOS/macOS ✅ |
 
-### Added
-- Debug utility/example (#18464)
-- TTS (Text-to-Speech) example with improved model fetch (#10903)
-
----
-
-## 🌐 WebGPU & Vulkan
-
-1. **WebGPU Flash Attention** (#18610)
-   - Initial implementation of Flash Attention for WebGPU backend
-   - Not directly relevant to iOS/macOS
-
-2. **Vulkan Optimizations** (#10991, #10846, #10942)
-   - Multi-row k quants
-   - im2col and matmul optimizations for stable diffusion
-   - Optimized mul_mat for small N values
-   - Not directly relevant to iOS/macOS Metal backend
+**iOS/macOS Impact:** The KV-cache optimization and scheduler warmup improvement directly benefit our platforms.
 
 ---
 
-## 🐛 Bug Fixes
+## 4. Critical Bug Fixes
 
-1. **Server Token Duplication** (#10997)
-   - Fixed token duplication when streaming with stop strings
+### Memory Management
 
-2. **Infill Endpoint Extra BOS** (#11106)
-   - Fixed extra BOS token in infill endpoint
+| Commit | Issue | Fix | Severity |
+|--------|-------|-----|----------|
+| `18361c579` | **server: fix memory reservations in populate_token_probs** | Fixed incorrect memory allocation | 🔴 HIGH |
+| `be8e3d951` | **context: do not reserve scheduler for warmups** | Reduced unnecessary memory allocation | 🟡 MEDIUM |
+| `39173bcac` | **context: reserve new scheduler when graph topology changes** | Proper scheduler reallocation on graph changes | 🟡 MEDIUM |
 
-3. **AVX512BF16 Build** (#18623)
-   - Fixed compilation issues with AVX512BF16
+**Impact on iOS/macOS:** Memory management improvements reduce peak memory usage and prevent potential crashes.
 
-4. **Token Attribute Handling**
-   - Fixed bitwise operations for token attributes
-   - Improved control token and EOG token handling
+### File I/O
 
-5. **Metal Flash Attention Buffer**
-   - Made buffer sizes consistent to avoid allocation issues
+| Commit | Issue | Fix | Severity |
+|--------|-------|-----|----------|
+| `960e5e3b4` | **llama-mmap: fix direct-io loading fallback EOF exception** | Fixed crash when direct I/O fails and falls back to mmap | 🔴 HIGH |
+| `287a33017` | **llama: Extend fallback, fix fileno for dio file** | Better fallback handling for direct I/O | 🟡 MEDIUM |
 
----
+**Impact on iOS/macOS:** These fixes prevent crashes when loading models with certain file access patterns. Critical for reliability.
 
-## 📦 Build System & Dependencies
+### Model Loading
 
-### CMake & Build
-- No changes to `build-xcframework.sh` (official script)
-- Minimum versions unchanged:
-  - iOS: 16.4
-  - macOS: 13.3
-  - visionOS: 1.0
-  - tvOS: 16.4
-
-### Environment Variables
-- Added `GGML_OP_OFFLOAD_MIN_BATCH` for controlling operation offloading (#18535)
+| Commit | Issue | Fix | Severity |
+|--------|-------|-----|----------|
+| `0c3b7a9ef` | **model: fix qwen3next broken due to #18683** | Fixed Qwen3 model loading regression | 🟡 MEDIUM |
+| `e4832e3ae` | **vocab: fix attribute overrides for harmony** | Fixed vocab loading for Harmony models | 🟢 LOW |
 
 ---
 
-## ⚠️ Breaking Changes Summary
+## 5. Template System Overhaul
 
-### High Risk (Requires Code Changes)
-None directly affecting iOS/macOS llama.cpp integration
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `c15395f73` | **common: implement new jinja template engine** | Complete rewrite of template system | 🟡 MEDIUM |
+| `959ecf7f2` | **jinja: fix undefined keys and attributes** | Bug fixes for new engine | 🟢 LOW |
+| `bbcdac018` | **jinja: fix object item order** | Proper dictsort implementation | 🟢 LOW |
 
-### Medium Risk (May Require Attention)
-1. **`llama_model_fit_context()` signature change**
-   - `margin` → `margins[]` array parameter
-   - Only affects code using this function
-
-2. **Sampler interface changes**
-   - Extended interface for backend sampling
-   - Only affects custom sampler implementations
-
-### Low Risk (Backward Compatible)
-1. New optional fields in structs (zero-initialized by default)
-2. New API functions (can be ignored if not used)
-3. Direct I/O flag (optional, defaults to false)
+**Impact:** The new Jinja template engine replaces the old system. Should be transparent to iOS/macOS app usage.
 
 ---
 
-## 🔍 Verification Steps
+## 6. Other Notable Changes
 
-After upgrading, verify:
+### LoRA System
 
-1. ✅ **Framework builds successfully**
-   ```bash
-   cd thirdparty/llama.cpp
-   ./build-xcframework-ios.sh
-   ```
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `a7e6ddb8b` | **lora: make sure model keeps track of associated adapters** | Improved adapter lifecycle management | 🟢 LOW |
 
-2. ✅ **Symbols exported correctly**
-   ```bash
-   nm -gU build-apple/llama.xcframework/ios-arm64/llama.framework/llama | grep llama_model
-   ```
+### Sampling
 
-3. ✅ **Vision models load correctly**
-   - Test with existing CLIP/LLAVA models
-   - Verify multimodal inference still works
-
-4. ✅ **Metal backend operational**
-   - Check Metal kernels compile
-   - Verify GPU offloading works
-
-5. ⚠️ **Add mobilenetv5.cpp to build script** (see Action Items below)
-
----
-
-## 📋 Action Items
-
-### ✅ Completed
-1. **✅ Add mobilenetv5.cpp to build script**
-   - ✅ Added copy command at line 86
-   - ✅ Updated CMakeLists.txt patch at line 125
-   - ✅ Updated sed pattern check at line 109
-   - **Status:** All changes applied to `build-xcframework-ios.sh`
-
-### Required Before Use
-1. **Test build after mobilenetv5.cpp addition**
-   ```bash
-   cd thirdparty/llama.cpp
-   ./build-xcframework-ios.sh
-   ```
-   Expected: Build completes successfully with all 15 vision models
-
-2. **Verify framework integrity**
-   ```bash
-   # Check mobilenetv5 symbols are present
-   nm -gU build-apple/llama.xcframework/ios-arm64/llama.framework/llama | grep mobilenet
-   ```
-
-3. **Update app integration if using:**
-   - Custom samplers (check interface compatibility)
-   - `llama_model_fit_context()` (update to use margins array)
-
-### Optional Enhancements
-1. Consider enabling backend sampling for Metal (experimental)
-2. Test `use_direct_io` flag on iOS devices for memory benefits
-3. Evaluate MobileNetV5 vision encoder for mobile use cases
-
----
-
-## 📈 Performance Impact
-
-### Expected Improvements
-- ✅ Flash Attention buffer management (fewer reallocations)
-- ✅ MoE kernel specialization (better MoE performance)
-- ✅ Metal top-k sampling (GPU-accelerated sampling)
-- 🔄 Backend sampling (experimental, needs testing)
-
-### Memory Impact
-- ✅ Direct I/O reduces page cache pressure
-- ✅ Optimized buffer allocations in Flash Attention
-- ➡️ Backend sampling may use additional GPU memory (experimental)
-
-### Binary Size Impact
-- ⬆️ Minimal increase due to new vision model (~50KB for mobilenetv5.cpp)
-- ⬆️ Backend sampling code adds ~20-30KB
-
----
-
-## 🎓 References
-
-### Key Commits
-- `506bb6e01` - Qwen3 Next improvements
-- `a61c8bc3b` - Gemma3n MobileNetV5 support
-- `d3dce4e0a` - Backend sampling support
-- `2038101bd` - Direct I/O flag
-- `945bf1062` - Metal MoE kernel specialization
-- `f38de1634` - Metal FA buffer optimization
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `a89002f07` | **ggml webgpu: support for backend sampling** | WebGPU backend sampling (not used on iOS/macOS) | N/A |
 
 ### Documentation
-- Backend Sampling PR: #17004
-- Gemma3n Vision PR: #18256
-- Direct I/O PR: #18166
+
+| Commit | Description |
+|--------|-------------|
+| `516a4ca9b` | **refactor: remove libcurl, use OpenSSL when available** |
+| `f709c7a33` | **ci, tests: use cmake to download models and remove libcurl dependency** |
 
 ---
 
-## 🎯 Major Risks Assessment
+## 7. Build Script Comparison
 
-### 🔴 HIGH RISK
-**None identified** - No critical breaking changes for iOS/macOS
+### Official vs Custom Script Differences
 
-### 🟡 MEDIUM RISK
+Our custom `build-xcframework-ios.sh` has these **intentional** differences from the official `build-xcframework.sh`:
 
-1. **Backend Sampling API Changes**
-   - **Issue:** Extended sampler interface, experimental feature
-   - **Mitigation:** Feature is opt-in, old sampling still works
-   - **Action:** Monitor for stability if enabling backend sampling
+| Feature | Official Script | Our Custom Script | Reason |
+|---------|----------------|-------------------|--------|
+| **Optimization** | Default flags | `-O3 -fno-finite-math-only` | Better performance |
+| **MTMD Files** | Not included | Copied via `copy_mtmd_files()` | Vision/audio model support |
+| **Headers Exported** | Limited | Includes `clip.h`, `mtmd.h`, `mtmd-helper.h` | API access for multimodal |
+| **Platforms** | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst | Focus on supported platforms |
+| **CMakeLists Patch** | None | FRAGILE patch for vision models | Required for linking |
 
-2. **`llama_model_fit_context()` Signature Change**
-   - **Issue:** Parameter changed from `margin` to `margins[]`
-   - **Mitigation:** Unlikely to be used in iOS integration
-   - **Action:** Check if app uses this function, update if needed
+### ⚠️ FRAGILE: CMakeLists.txt Patch
 
-### 🟢 LOW RISK
+Our script patches `src/CMakeLists.txt` to include vision model files. **This upgrade did NOT break the patch** because:
 
-1. **New Vision Model (mobilenetv5.cpp)** ✅ RESOLVED
-   - **Issue:** Was missing from build script
-   - **Mitigation:** Added to build script
-   - **Status:** ✅ Complete - all changes applied
+1. ✅ No new vision models were added (mobilenetv5 was the last one in b7703)
+2. ✅ `mtmd-helper.cpp` still exists in CMakeLists.txt
+3. ✅ Our sed pattern still works
 
-2. **Direct I/O Flag**
-   - **Issue:** New feature, different memory behavior
-   - **Mitigation:** Optional, defaults to disabled
-   - **Action:** Test on devices if enabling
+### ⚠️ Build Script Fix Required
+
+**Issue:** cpp-httplib replaced libcurl (commit `516a4ca9b`) and uses macOS-specific Security framework APIs that fail on iOS/Mac Catalyst builds.
+
+**Fix Applied:** ✅ Replaced `-DLLAMA_CURL=OFF` with `-DLLAMA_HTTPLIB=OFF` in all build configurations (iOS sim, iOS device, macOS, Mac Catalyst arm64, Mac Catalyst x86_64).
+
+**Error Before Fix:**
+```
+error: use of undeclared identifier 'SecTrustCopyAnchorCertificates'
+error: use of undeclared identifier 'kSecFormatX509Cert'
+```
+
+**Action Required:** ✅ **COMPLETED** - Build script updated to disable cpp-httplib.
 
 ---
 
-## ✅ Upgrade Recommendation
+## 8. Risk Assessment
 
-**Status:** ✅ **READY TO BUILD AND TEST**
+### High Risk ⚠️
 
-**Rationale:**
-1. No critical breaking changes to iOS/macOS APIs
-2. Performance improvements in Metal backend
-3. New model support expands capabilities
-4. Backend sampling is opt-in experimental feature
-5. ✅ Build script updated with mobilenetv5.cpp support
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| **Memory allocation bugs** | Fixed in commits 18361c579, be8e3d951, 39173bcac | ✅ Resolved |
+| **mmap/direct-io crashes** | Fixed in commits 960e5e3b4, 287a33017 | ✅ Resolved |
 
-**Confidence Level:** HIGH (95%)
-- Well-tested upstream changes
-- Metal optimizations are incremental improvements
-- New features are additive, not disruptive
-- ✅ Build script changes completed
+### Medium Risk ⚠️
 
-**Next Steps:**
-1. ✅ ~~Add mobilenetv5.cpp to build script~~ **DONE**
-2. **Test build on macOS** (next action)
-3. Verify existing functionality with test models
-4. Consider testing experimental backend sampling on Metal
-5. Monitor for any runtime issues with new Metal optimizations
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| **Graph topology changes** | Scheduler now reallocates when graph changes | ⚠️ Monitor performance |
+| **Template system overhaul** | Extensive testing needed if app uses templates | ⚠️ Test chat templates |
+| **API deprecation (lora_free)** | Check if we call llama_adapter_lora_free() | ✅ Verify usage |
+
+### Low Risk ✅
+
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| **MTMD callback changes** | Refactoring, no API changes | ✅ Safe |
+| **New sampler (adaptive-p)** | Additive API, no breaking changes | ✅ Safe |
+| **Vision model changes** | No new models added | ✅ Safe |
+
+---
+
+## 9. Testing Recommendations
+
+### Critical Tests
+
+1. **Memory Stress Test**
+   - Load multiple large models sequentially
+   - Monitor peak memory usage (should be lower)
+   - Verify no crashes during model switching
+
+2. **File I/O Test**
+   - Test model loading from various storage locations (iCloud, local, app bundle)
+   - Verify no crashes with large GGUF files (>4GB)
+   - Test both mmap and direct-io paths
+
+3. **Multimodal Test**
+   - Test vision models (llava, minicpmv, qwen2vl, etc.)
+   - Test audio models (whisper-enc, conformer)
+   - Verify CLIP encoding works correctly
+
+4. **Sampler Test**
+   - (Optional) Test new adaptive-p sampler
+   - Verify existing sampling methods still work
+
+### Performance Benchmarks
+
+Run `llama-bench` equivalent to measure:
+- **Prompt processing**: Should be same or faster (KV-cache optimization)
+- **Token generation**: Should be faster (Metal FA optimization)
+- **Memory usage**: Should be lower (scheduler optimization)
+
+---
+
+## 10. Upgrade Checklist
+
+- [x] **Merge upstream commits** (b7703 → b7783)
+- [x] **Verify vision models** - No new models, build script OK
+- [ ] **Rebuild xcframework** - Run `./build-xcframework-ios.sh`
+- [ ] **Check API usage** - Search codebase for `llama_adapter_lora_free`
+- [ ] **Test model loading** - All GGUF models load without crashes
+- [ ] **Test vision models** - CLIP encoding works
+- [ ] **Test audio models** - Whisper/ASR works (LFM2.5 fix)
+- [ ] **Memory profiling** - Verify lower peak memory
+- [ ] **Performance benchmark** - Compare inference speed
+
+---
+
+## 11. References
+
+- **Commit Range:** [tag-b7703...tag-b7783](https://github.com/ggml-org/llama.cpp/compare/tag-b7703...tag-b7783)
+- **Total Commits:** 81
+- **Official Build Script:** `thirdparty/llama.cpp/build-xcframework.sh`
+- **Custom Build Script:** `thirdparty/llama.cpp/build-xcframework-ios.sh`
+- **CLAUDE.md:** `thirdparty/llama.cpp/CLAUDE.md` (upgrade procedure)
+
+---
+
+## Appendix: Full Commit List (Key Changes)
+
+```
+d1e355648 CUDA: Replace init_offsets kernel with iterators in cub-based argsort
+271191906 metal : enable FA for MLA heads
+959ecf7f2 jinja : fix undefined keys and attributes and int/float as bool
+18361c579 server: fix memory reservations in populate_token_probs
+365a3e8c3 ggml : add ggml_build_forward_select
+287a33017 llama : Extend fallback, fix fileno for dio file
+bbcdac018 jinja : fix object item order (and properly implement dictsort)
+d1b4757de opencl: fix q6_K mv for m=1
+2fbde785b kv-cache : optimize KQ mask construction
+388ce8224 ggml : extend ggml_pool_1d + metal
+c945aaaef mtmd : Fix ASR for LFM2.5-Audio-1.5B
+c15395f73 common : implement new jinja template engine
+be8e3d951 context : do not reserve scheduler for warmups
+13f1e4a9c llama : add adaptive-p sampler
+39173bcac context : reserve new scheduler when graph topology changes
+a7e6ddb8b lora: make sure model keep track of associated adapters
+d98b54812 Restore clip's cb() to its rightful glory
+516a4ca9b refactor : remove libcurl, use OpenSSL when available
+7d587e554 ggml-metal: do not copy headers for embedded
+960e5e3b4 llama-mmap: fix direct-io loading fallback EOF exception
+e047f9ee9 mtmd: fix use_non_causal being reported incorrectly
+```
+
+---
+
+**Generated:** 2026-01-20
+**By:** Claude Code Upgrade Analysis
+**For:** AIAssistant iOS/macOS App

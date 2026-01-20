@@ -569,7 +569,7 @@ cmake -B build-ios-sim -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -DLLAMA_CURL=OFF \
+    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-ios-sim --config Release -- -quiet
 
@@ -583,7 +583,7 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -DLLAMA_CURL=OFF \
+    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-ios-device --config Release -- -quiet
 
@@ -594,7 +594,7 @@ cmake -B build-macos -G Xcode \
    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
    -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
    -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-   -DLLAMA_CURL=OFF \
+   -DLLAMA_HTTPLIB=OFF \
    -S .
 cmake --build build-macos --config Release -- -quiet
 
@@ -625,7 +625,7 @@ cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
     -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
-    -DLLAMA_CURL=OFF \
+    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-maccatalyst-arm64 --config Release
 
@@ -653,7 +653,7 @@ cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
     -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
-    -DLLAMA_CURL=OFF \
+    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-maccatalyst-x86_64 --config Release
 

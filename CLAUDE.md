@@ -125,7 +125,19 @@ cp ggml/include/new-header.h ${header_path}
 
 And update the module.modulemap if needed.
 
-### 3. Check for API Changes
+### 3. Check for CMake Build Flag Changes
+
+Compare our custom build flags with the official script to detect changed dependencies:
+
+```bash
+# Compare CMAKE flags between official and custom scripts
+diff <(grep "^    -D" build-xcframework.sh | sort) \
+     <(grep "^    -D" build-xcframework-ios.sh | sort)
+```
+
+If upstream added/changed HTTP libraries, SSL, or other dependencies that fail on iOS/Catalyst, update our flags to disable them (e.g., `-DLLAMA_HTTPLIB=OFF`, `-DLLAMA_OPENSSL=OFF`).
+
+### 4. Check for API Changes
 
 Review changes to:
 - `include/llama.h` - Main API
@@ -135,7 +147,7 @@ Review changes to:
 
 Breaking changes require updates to the Swift bridge code in the main project.
 
-### 4. Post-Upgrade Verification
+### 5. Post-Upgrade Verification
 
 ```bash
 # Clean and rebuild
