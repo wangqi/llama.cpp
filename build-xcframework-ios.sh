@@ -84,6 +84,9 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/youtuvl.cpp" src/clip-models/
     # wangqi 2026-01-11: Added new vision encoder from b7703 upgrade (Gemma3n MobileNetV5)
     cp -fp "tools/mtmd/models/mobilenetv5.cpp" src/clip-models/
+    # wangqi 2026-02-18: Added new vision encoders from remote HEAD upgrade
+    cp -fp "tools/mtmd/models/kimik25.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/nemotron-v2-vl.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -106,7 +109,7 @@ copy_mtmd_files() {
     #           Run: grep -n "mtmd-helper" src/CMakeLists.txt
     # ============================================================================
     # Check for the LAST model in our list to ensure patch is up-to-date
-    if ! grep -q "clip-models/mobilenetv5.cpp" src/CMakeLists.txt; then
+    if ! grep -q "clip-models/nemotron-v2-vl.cpp" src/CMakeLists.txt; then
         sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
             clip-models/cogvlm.cpp\
             clip-models/internvl.cpp\
@@ -122,7 +125,9 @@ copy_mtmd_files() {
             clip-models/conformer.cpp\
             clip-models/glm4v.cpp\
             clip-models/youtuvl.cpp\
-            clip-models/mobilenetv5.cpp|' src/CMakeLists.txt
+            clip-models/mobilenetv5.cpp\
+            clip-models/kimik25.cpp\
+            clip-models/nemotron-v2-vl.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }
