@@ -44,6 +44,7 @@ COMMON_CMAKE_ARGS=(
     -DGGML_OPENMP=${GGML_OPENMP}
     -DCMAKE_C_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
     -DCMAKE_CXX_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
+    -DLLAMA_OPENSSL=OFF
 )
 
 copy_mtmd_files() {
@@ -151,9 +152,7 @@ check_required_tool() {
 }
 echo "Checking for required tools..."
 check_required_tool "cmake" "Please install CMake 3.28.0 or later (brew install cmake)"
-check_required_tool "xcodebuild" "Please install Xcode and Xcode Command Line Tools (xcode-select --install)"
-check_required_tool "libtool" "Please install libtool which should be available with Xcode Command Line Tools (CLT). Make sure Xcode CLT is installed (xcode-select --install)"
-check_required_tool "dsymutil" "Please install Xcode and Xcode Command Line Tools (xcode-select --install)"
+check_required_tool "xcrun" "Please install Xcode and Xcode Command Line Tools (xcode-select --install)"
 
 set -e
 
@@ -373,7 +372,7 @@ combine_static_libraries() {
 
     # Since we have multiple architectures libtool will find object files that do not
     # match the target architecture. We suppress these warnings.
-    libtool -static -o "${temp_dir}/combined.a" "${libs[@]}" 2> /dev/null
+    xcrun libtool -static -o "${temp_dir}/combined.a" "${libs[@]}" 2> /dev/null
 
     # Determine SDK, architectures, and install_name based on platform and simulator flag.
     local sdk=""
@@ -488,7 +487,7 @@ combine_static_libraries() {
 
     # Platform-specific post-processing for device builds
     if [[ "$is_simulator" == "false" ]] || [[ "$platform" == "maccatalyst" ]]; then
-        if command -v xcrun vtool &>/dev/null; then
+        if xcrun -f vtool &>/dev/null; then
             case "$platform" in
                 "ios")
                     echo "Marking binary as a framework binary for iOS..."
@@ -574,7 +573,6 @@ cmake -B build-ios-sim -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-ios-sim --config Release -- -quiet
 
@@ -588,7 +586,6 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-    -DLLAMA_HTTPLIB=OFF \
     -S .
 cmake --build build-ios-device --config Release -- -quiet
 
@@ -599,7 +596,6 @@ cmake -B build-macos -G Xcode \
    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
    -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
    -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
-   -DLLAMA_HTTPLIB=OFF \
    -S .
 cmake --build build-macos --config Release -- -quiet
 
@@ -630,7 +626,7 @@ cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
     -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
-    -DLLAMA_HTTPLIB=OFF \
+    -DLLAMA_OPENSSL=OFF \
     -S .
 cmake --build build-maccatalyst-arm64 --config Release
 
@@ -658,7 +654,7 @@ cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
     -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
-    -DLLAMA_HTTPLIB=OFF \
+    -DLLAMA_OPENSSL=OFF \
     -S .
 cmake --build build-maccatalyst-x86_64 --config Release
 
