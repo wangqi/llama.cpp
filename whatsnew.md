@@ -1,116 +1,140 @@
-# llama.cpp Upgrade: tag-b7988 → tag-b8089
+# llama.cpp Upgrade: b8089 → b8145
 
-**Upgrade date:** 2026-02-18
-**Upstream commits included:** ~100 commits (PR #19280–#19693)
-**Conflict files resolved:** `src/CMakeLists.txt` (1 file)
-
----
-
-## New Vision Model Support
-
-Two new multimodal vision encoders were added to `tools/mtmd/models/` and integrated into `src/clip-models/` and `build-xcframework-ios.sh`:
-
-| Model | File | PR |
-|-------|------|----|
-| **Kimi-K2.5** | `kimik25.cpp` | #19170 |
-| **Nemotron Nano 12B v2 VL** | `nemotron-v2-vl.cpp` | #19547 |
-
-Both are now included in the iOS/macOS XCFramework build. The `build-xcframework-ios.sh` copy list and `sed` guard check were updated accordingly.
+**Date:** 2026-02-24
+**Commits in range:** 56 upstream commits merged
 
 ---
 
-## Metal (Apple GPU) Improvements
+## New Features
 
-These changes directly improve performance and correctness on all Apple devices:
+### New Vision Model: PaddleOCR-VL
+- Added `tools/mtmd/models/paddleocr.cpp` — vision encoder for PaddleOCR-VL
+- Uses M-RoPE (multi-dimensional rotary position embedding) for 4D position IDs
+- ⚠️ **Build script action required** — see Risk section below
 
-- **Fix ACC op** (#19427): Corrected a wrong Metal ACC operation that could produce incorrect results. This is a correctness bug fix with direct impact on inference quality.
-- **Improve concurrency** (#19555): Metal backend now exploits more GPU parallelism, improving throughput on Apple Silicon.
-- **Support `GGML_OP_SET`** (#19548): New Metal kernel enabling additional graph operations.
-- **`sum_rows` kernel upgraded to float4** (#19524): Vectorized kernel improves memory bandwidth utilization on Apple Silicon.
-- **Extend `l2_norm` support for non-contiguous tensors** (#19502): Removes a previous limitation in norm computation.
-- **Consolidate unary ops** (#19490): Internal cleanup; reduces Metal shader compile time and binary size.
-- **Unary ops support non-contiguous `src0`** (#19511): Fixes incorrect fallback paths for certain graph topologies. Includes Metal F16 unary ops.
+### GLM-OCR Support via glm4v
+- Extended `tools/mtmd/models/glm4v.cpp` to support GLM-OCR models
+- GLM-OCR does not have learned position embeddings; the build now handles the `nullptr` case gracefully
+- No new file added; existing `glm4v.cpp` already included in our build script
 
----
+### Flash Attention Toggle in mtmd (via ctx_params)
+- `mtmd: build_attn modified, flash_attn on/off via ctx_params (#19729)`
+- Flash attention for multimodal vision encoders can now be controlled via the llama context parameters
+- Behavioral change: flash attention routing is now delegated to the context params rather than hardcoded
 
-## LoRA API — Breaking Change
+### New Text Model Architectures
+| Model | PR | Notes |
+|-------|-----|-------|
+| Kanana-2 | #19803 | New Korean LLM architecture |
+| JAIS-2 | #19488 | Arabic-English bilingual LLM |
+| Full Modern BERT | #18330 | Complete BERT encoder support |
+| LFM2.5-Audio-1.5B | #19687 | Tokenizer added for audio model |
+| LFM2-24B-A2B label | #19848 | Label update only |
 
-> WARNING: HIGH RISK if the Swift bridge or any caller uses the LoRA adapter API.
+### Quantization: `--dry-run` Option
+- Added `dry_run` field to `llama_model_quantize_params` in `include/llama.h`
+- Allows calculating the final quantization size without performing the actual quantization
+- Low risk: additive API change, default value is `false`
 
-The LoRA API in `include/llama.h` was overhauled in PR #19280:
+### ARM64 CPU Performance Improvement
+- `ggml-cpu: arm64: q5_K repack GEMM and GEMV (dotprod) (#19356)`
+- Significant performance improvement for Q5_K quantized models on Apple Silicon
+- No API change; pure performance optimization
 
-| Old API | New API |
-|---------|---------|
-| `llama_set_adapter_lora(ctx, adapter, scale)` | `llama_set_adapters_lora(ctx, adapters[], n_adapters, scales[])` |
-| `llama_rm_adapter_lora(ctx, adapter)` | _(removed)_ |
-| `llama_clear_adapter_lora(ctx)` | _(removed)_ |
-| `llama_apply_adapter_cvec(...)` | `llama_set_adapter_cvec(...)` |
+### Jinja Template Improvements
+- Fixed stats for `tojson` and `string` filters (#19785)
+- Added `"indent"` string filter support (#19529)
+- Fixed Step-3.5-Flash format detection and thinking support (#19635)
+- Fixed gpt-oss Jinja error when assistant message has both content and thinking with tool calls (#19704)
+- Improved Qwen3-Coder and Nemotron Nano 3 chat template parsers (#19765)
 
-The new API sets all LoRA adapters in a single call (batch semantics) and only modifies the context if the adapter list actually changed. The old per-adapter add/remove API is gone.
+### Server Enhancements
+- `max_completion_tokens` request property now supported (#19831)
+- Contiguous Responses API input items merged into single assistant message (#19773)
+- Slots debug endpoint saves generated text when `LLAMA_SERVER_SLOTS_DEBUG=1` (#19622)
 
-**Action required:** Search for `llama_set_adapter_lora`, `llama_rm_adapter_lora`, `llama_clear_adapter_lora`, and `llama_apply_adapter_cvec` in the Swift bridge and calling code and update to the new signatures.
-
----
-
-## Memory & KV Cache Fixes
-
-- **Fix KV cache size for hybrid models** (#19559): Hybrid attention/SSM models (Falcon-H1, Gemma3n) could allocate the wrong KV cache size. Fixed. Directly affects inference correctness for these model architectures.
-- **Graph: fix KQ mask, LoRA, cvec reuse checks** (#19644): Prevents incorrect reuse of graph inputs across runs, which could cause subtle inference errors on repeated calls.
-- **Fix output reorder with backend sampling** (#19638): Corrects output ordering when backend-side sampling is used.
-
----
-
-## New Text Models
-
-| Model | PR |
-|-------|----|
-| Kimi-K2.5 (vision + text) | #19170 |
-| Tiny Aya (AYA-23 series) | #19611 |
-| GLM MoE DSA architecture | #19460 |
-| JoyAI-LLM-Flash | #19651 |
-| Kimi Linear conv state fix | #19531 |
-
----
-
-## ARM CPU Performance (Apple M-series)
-
-- **SVE in GEMM q4_K x q8_K 8x8 kernel** (#19132): Significant matrix multiplication speedup on ARM cores with SVE/SVE2. Apple M-series chips support SVE, so this benefits macOS native builds.
-- **Fix non-LTO CPU feature detection** (#19609): Prevents LTO flags from leaking into CPU feature detection builds, avoiding potential SIGILL crashes when loading backends on certain configurations.
+### Third-Party Updates
+- `cpp-httplib` updated from 0.33.1 → 0.34.0 (#19830)
 
 ---
 
-## Common & Build Fixes
+## API Changes
 
-- **`common`: replace deprecated `codecvt`** (#19517, #19565): Removes C++17 deprecated UTF-8 conversion; improves future compiler compatibility.
-- **`common`: remove unused token utility functions** (#19506): API surface reduction.
-- **`common`: inline small string helpers** (#19693): Minor compile-time optimization.
-- **`ggml_is_view` added as public API** (#19539): New `ggml_is_view()` function exposed in the public GGML header.
-- **`ggml`: fix binary broadcast for permuted `src1`** (#19484): Correctness fix for certain graph patterns.
+### `include/llama.h`
+- **Added**: `bool dry_run` field in `llama_model_quantize_params` struct
+  - Low risk: new field with `false` default; no Swift bridge changes needed
 
----
+### `ggml/include/ggml.h`
+- **Removed**: `ggml_type_sizef()` deprecated function (previously marked `GGML_DEPRECATED`)
+  - This function was deprecated for some time; callers should use `ggml_row_size()` instead
+  - The `llamacpp_swift` bridge does **not** use this function — no impact on our build
 
-## Build Script Updates (`build-xcframework-ios.sh`)
-
-Three upstream fixes from the official `build-xcframework.sh` were ported to our custom script:
-
-| Fix | PR | Change |
-|-----|----|--------|
-| Use `xcrun libtool` instead of bare `libtool` | #19605 | Ensures correct tool resolution under Xcode CLT environments |
-| Use `xcrun -f vtool` instead of `command -v xcrun vtool` | #19605 | More reliable vtool availability check |
-| Check only for `xcrun`; drop individual `libtool`/`dsymutil`/`xcodebuild` checks | #19605 | All these tools are resolved via `xcrun` anyway |
-
-The `LLAMA_HTTPLIB` CMake option was removed upstream (#19623). Our script does not use this option so no change was needed.
+### State Save/Load Behavior Change (`src/llama.cpp`)
+- **PR #18862**: Removed write/read of output ids, logits, and embeddings from `llama_state_save_file` / `llama_state_load_file`
+  - Logits and embeddings are **no longer persisted** in saved sessions
+  - Saved state files from b8145 are **not backward compatible** with files saved by earlier builds
+  - Apps using session caching/resumption will need to re-run the final token after loading state to regenerate valid logits
+  - Our `llamacpp_swift` bridge calls both `llama_state_save_file` and `llama_state_load_file` — **session files created before this upgrade must be discarded**
 
 ---
 
-## Risk Summary
+## Risk Assessment
 
-| Area | Risk | Reason |
-|------|------|--------|
-| **LoRA API** | HIGH | Three functions removed, one renamed with new signature. Will cause compile error if used. |
-| **Metal ACC op fix** | MEDIUM | Correctness fix — inference results may change slightly for models using the ACC op. |
-| **KV cache fix for hybrid models** | MEDIUM | Affects Falcon-H1, Gemma3n models. Correctness improvement, may change memory allocation. |
-| **New vision models** | LOW | Additive only. New files in `src/clip-models/`, no changes to existing encoders. |
-| **Common API removals** | LOW | Removed functions were internal/unused. Unlikely to affect Swift bridge. |
-| **Build script `xcrun libtool`** | LOW | Defensive fix. Works identically on standard Xcode CLT setups. |
-| **ARM SVE GEMM kernel** | LOW | Opt-in via CPU feature detection; no-op if SVE not detected at runtime. |
+### HIGH: `paddleocr.cpp` Missing from Build Script
+
+**Problem:** `tools/mtmd/models/paddleocr.cpp` is a new file added in this upgrade, but it is **not** listed in `build-xcframework-ios.sh`'s `copy_mtmd_files()` function or the CMakeLists.txt sed-patch. The linker will report `Undefined symbols: vtable for clip_graph_paddleocr::build()` at link time.
+
+**Required fix:** Add to `build-xcframework-ios.sh`:
+```bash
+# In copy_mtmd_files(), add:
+cp -fp "tools/mtmd/models/paddleocr.cpp" src/clip-models/
+
+# In the sed patch list, add after nemotron-v2-vl.cpp:
+clip-models/paddleocr.cpp\
+```
+
+### MEDIUM: State File Incompatibility
+
+**Problem:** Session state files saved with llama.cpp before b8145 no longer contain logits/embeddings. Loading such old files and continuing inference without re-evaluating the last token will produce garbage next-token predictions.
+
+**Impact:** Any user who has a cached session file from a previous version will get incorrect inference results on session resume until the state is regenerated.
+
+**Mitigation:** Invalidate all cached session files after upgrade. The `llamacpp_swift` bridge already re-evaluates the last prompt token after loading state (`GPT_SPM.swift:561`), so behavior may be acceptable — verify with testing.
+
+### MEDIUM: mtmd Flash Attention Routing Change
+
+**Problem:** Flash attention for multimodal vision is now controlled by `ctx_params` rather than hardcoded. The behavior depends on how the llama context is created. If `llamacpp_swift` creates contexts with flash attention disabled, multimodal encoding performance may regress on Apple Silicon.
+
+**Mitigation:** Verify that multimodal (CLIP/mtmd) inference still works correctly after rebuild. Benchmark latency on image encoding.
+
+### LOW: `ggml_type_sizef` Removal
+
+The deprecated `ggml_type_sizef()` function has been removed. Our `llamacpp_swift` bridge does not use it. No action required.
+
+### LOW: New Model Architectures
+
+New model families (Kanana-2, JAIS-2, BERT, PaddleOCR-VL) were added. These only activate when the corresponding GGUF model files are loaded. No regression risk for existing GGUF models.
+
+---
+
+## Build Script Comparison: `build-xcframework.sh` vs `build-xcframework-ios.sh`
+
+| Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
+|--------|--------------------------------|-------------------------------|
+| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
+| mtmd/clip files | Not copied (not needed) | Copied via `copy_mtmd_files()` |
+| Mac Catalyst | Not supported | Added (arm64 + x86_64 via lipo) |
+| Optimization flags | No explicit `-O3` | `-O3 -fno-finite-math-only` |
+| OpenSSL | Not in COMMON_CMAKE_ARGS | `-DLLAMA_OPENSSL=OFF` pre-set |
+| New headers exported | Includes `ggml-opt.h` | Same (already present) |
+| Module map | Does NOT include clip/mtmd | Includes `clip.h`, `mtmd.h`, `mtmd-helper.h` |
+
+**No structural changes** to the official build script that require migration to our custom script. The official script is functionally identical for iOS/macOS build logic.
+
+---
+
+## Action Items
+
+1. **REQUIRED before building**: Add `paddleocr.cpp` to `build-xcframework-ios.sh` (`copy_mtmd_files()` and CMakeLists.txt sed patch)
+2. **REQUIRED after building**: Invalidate any cached session state files to avoid stale logits from old saves
+3. **Recommended**: Test multimodal inference after rebuild to verify flash attention routing works correctly
