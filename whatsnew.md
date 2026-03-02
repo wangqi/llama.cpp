@@ -1,140 +1,91 @@
-# llama.cpp Upgrade: b8089 → b8145
+# llama.cpp Upgrade: b8145 → b8185
 
-**Date:** 2026-02-24
-**Commits in range:** 56 upstream commits merged
+**Date:** 2026-03-02
+**Commits in range:** 43 upstream commits merged
 
 ---
 
 ## New Features
 
-### New Vision Model: PaddleOCR-VL
-- Added `tools/mtmd/models/paddleocr.cpp` — vision encoder for PaddleOCR-VL
-- Uses M-RoPE (multi-dimensional rotary position embedding) for 4D position IDs
-- ⚠️ **Build script action required** — see Risk section below
-
-### GLM-OCR Support via glm4v
-- Extended `tools/mtmd/models/glm4v.cpp` to support GLM-OCR models
-- GLM-OCR does not have learned position embeddings; the build now handles the `nullptr` case gracefully
-- No new file added; existing `glm4v.cpp` already included in our build script
-
-### Flash Attention Toggle in mtmd (via ctx_params)
-- `mtmd: build_attn modified, flash_attn on/off via ctx_params (#19729)`
-- Flash attention for multimodal vision encoders can now be controlled via the llama context parameters
-- Behavioral change: flash attention routing is now delegated to the context params rather than hardcoded
+### New Vision Models
+- No new vision encoder `.cpp` files added. All 18 encoders already present in `build-xcframework-ios.sh`.
 
 ### New Text Model Architectures
 | Model | PR | Notes |
 |-------|-----|-------|
-| Kanana-2 | #19803 | New Korean LLM architecture |
-| JAIS-2 | #19488 | Arabic-English bilingual LLM |
-| Full Modern BERT | #18330 | Complete BERT encoder support |
-| LFM2.5-Audio-1.5B | #19687 | Tokenizer added for audio model |
-| LFM2-24B-A2B label | #19848 | Label update only |
+| Jina Embeddings v5 Nano | #19826 | Partial EuroBERT architecture; embedding/retrieval model |
 
-### Quantization: `--dry-run` Option
-- Added `dry_run` field to `llama_model_quantize_params` in `include/llama.h`
-- Allows calculating the final quantization size without performing the actual quantization
-- Low risk: additive API change, default value is `false`
+### Performance & Backend
+- `ggml-cpu`: add repack for mxfp4 (#19738) — new quantization repack format
+- `gguf`: avoid too many `fstat()` file size calls during model loading (#19919) — faster startup
+- `server`: enable multi-modal prompt caching (#19877) — vision KV cache reuse
+- `server`: support multi-modal context checkpoints (#19849) — resume vision context
 
-### ARM64 CPU Performance Improvement
-- `ggml-cpu: arm64: q5_K repack GEMM and GEMV (dotprod) (#19356)`
-- Significant performance improvement for Q5_K quantized models on Apple Silicon
-- No API change; pure performance optimization
+### Model & Architecture Changes
+- `models`: fix graph splits (#19866) — correctness fix for multi-layer model graph partitioning
+- `llama`: add option to merge gate and exp weights (#19139) — new MoE weight merging option
+- `vendors`: update miniaudio to 0.11.24 (#19914)
 
-### Jinja Template Improvements
-- Fixed stats for `tojson` and `string` filters (#19785)
-- Added `"indent"` string filter support (#19529)
-- Fixed Step-3.5-Flash format detection and thinking support (#19635)
-- Fixed gpt-oss Jinja error when assistant message has both content and thinking with tool calls (#19704)
-- Improved Qwen3-Coder and Nemotron Nano 3 chat template parsers (#19765)
+---
 
-### Server Enhancements
-- `max_completion_tokens` request property now supported (#19831)
-- Contiguous Responses API input items merged into single assistant message (#19773)
-- Slots debug endpoint saves generated text when `LLAMA_SERVER_SLOTS_DEBUG=1` (#19622)
+## Bug Fixes
 
-### Third-Party Updates
-- `cpp-httplib` updated from 0.33.1 → 0.34.0 (#19830)
+### KV Cache & M-RoPE
+- `kv-cache`: fix `can_shift()` check to take into account M-RoPE (#19928)
+  - Affects models using M-RoPE: Qwen3VL, Llama4, Qwen2VL
+  - Without this fix, KV cache shifting could be incorrectly enabled for M-RoPE models
+
+### Multimodal (mtmd)
+- `mtmd`: fix padding of n_tokens (#19930)
+  - Incorrect token count padding in vision token sequences; could cause subtle inference errors
+
+### Jinja / Chat Templates
+- `jinja`: correct default size for string slices (#19913) — fixes slice operations on short strings
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **Added**: `bool dry_run` field in `llama_model_quantize_params` struct
-  - Low risk: new field with `false` default; no Swift bridge changes needed
+- No changes
 
 ### `ggml/include/ggml.h`
-- **Removed**: `ggml_type_sizef()` deprecated function (previously marked `GGML_DEPRECATED`)
-  - This function was deprecated for some time; callers should use `ggml_row_size()` instead
-  - The `llamacpp_swift` bridge does **not** use this function — no impact on our build
+- No changes
 
-### State Save/Load Behavior Change (`src/llama.cpp`)
-- **PR #18862**: Removed write/read of output ids, logits, and embeddings from `llama_state_save_file` / `llama_state_load_file`
-  - Logits and embeddings are **no longer persisted** in saved sessions
-  - Saved state files from b8145 are **not backward compatible** with files saved by earlier builds
-  - Apps using session caching/resumption will need to re-run the final token after loading state to regenerate valid logits
-  - Our `llamacpp_swift` bridge calls both `llama_state_save_file` and `llama_state_load_file` — **session files created before this upgrade must be discarded**
+### `tools/mtmd/mtmd.h` / `tools/mtmd/clip.h`
+- No changes
+
+### State Save/Load Behavioral Changes
+- No breaking changes to state save/load
 
 ---
 
 ## Risk Assessment
 
-### HIGH: `paddleocr.cpp` Missing from Build Script
+### LOW: KV Cache M-RoPE can_shift() fix
+KV cache shift correctness fix for M-RoPE models (Qwen3VL, Llama4). Existing session cache files for these models may produce slightly different outputs after the fix, but no crash risk.
 
-**Problem:** `tools/mtmd/models/paddleocr.cpp` is a new file added in this upgrade, but it is **not** listed in `build-xcframework-ios.sh`'s `copy_mtmd_files()` function or the CMakeLists.txt sed-patch. The linker will report `Undefined symbols: vtable for clip_graph_paddleocr::build()` at link time.
+### LOW: mtmd n_tokens padding fix
+Fixes token count padding in vision sequences. Subtle correctness improvement; unlikely to cause visible failures.
 
-**Required fix:** Add to `build-xcframework-ios.sh`:
-```bash
-# In copy_mtmd_files(), add:
-cp -fp "tools/mtmd/models/paddleocr.cpp" src/clip-models/
-
-# In the sed patch list, add after nemotron-v2-vl.cpp:
-clip-models/paddleocr.cpp\
-```
-
-### MEDIUM: State File Incompatibility
-
-**Problem:** Session state files saved with llama.cpp before b8145 no longer contain logits/embeddings. Loading such old files and continuing inference without re-evaluating the last token will produce garbage next-token predictions.
-
-**Impact:** Any user who has a cached session file from a previous version will get incorrect inference results on session resume until the state is regenerated.
-
-**Mitigation:** Invalidate all cached session files after upgrade. The `llamacpp_swift` bridge already re-evaluates the last prompt token after loading state (`GPT_SPM.swift:561`), so behavior may be acceptable — verify with testing.
-
-### MEDIUM: mtmd Flash Attention Routing Change
-
-**Problem:** Flash attention for multimodal vision is now controlled by `ctx_params` rather than hardcoded. The behavior depends on how the llama context is created. If `llamacpp_swift` creates contexts with flash attention disabled, multimodal encoding performance may regress on Apple Silicon.
-
-**Mitigation:** Verify that multimodal (CLIP/mtmd) inference still works correctly after rebuild. Benchmark latency on image encoding.
-
-### LOW: `ggml_type_sizef` Removal
-
-The deprecated `ggml_type_sizef()` function has been removed. Our `llamacpp_swift` bridge does not use it. No action required.
-
-### LOW: New Model Architectures
-
-New model families (Kanana-2, JAIS-2, BERT, PaddleOCR-VL) were added. These only activate when the corresponding GGUF model files are loaded. No regression risk for existing GGUF models.
+### LOW: Jinja string slice fix
+Only affects chat templates that perform slice operations on short strings.
 
 ---
 
-## Build Script Comparison: `build-xcframework.sh` vs `build-xcframework-ios.sh`
+## Build Script Comparison
 
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| mtmd/clip files | Not copied (not needed) | Copied via `copy_mtmd_files()` |
-| Mac Catalyst | Not supported | Added (arm64 + x86_64 via lipo) |
-| Optimization flags | No explicit `-O3` | `-O3 -fno-finite-math-only` |
-| OpenSSL | Not in COMMON_CMAKE_ARGS | `-DLLAMA_OPENSSL=OFF` pre-set |
-| New headers exported | Includes `ggml-opt.h` | Same (already present) |
-| Module map | Does NOT include clip/mtmd | Includes `clip.h`, `mtmd.h`, `mtmd-helper.h` |
+| Vision encoders | All 18 in `tools/mtmd/models/` | All 18 already patched in |
 
-**No structural changes** to the official build script that require migration to our custom script. The official script is functionally identical for iOS/macOS build logic.
+**No structural changes** — build script requires no modifications for this upgrade.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED before building**: Add `paddleocr.cpp` to `build-xcframework-ios.sh` (`copy_mtmd_files()` and CMakeLists.txt sed patch)
-2. **REQUIRED after building**: Invalidate any cached session state files to avoid stale logits from old saves
-3. **Recommended**: Test multimodal inference after rebuild to verify flash attention routing works correctly
+1. **REQUIRED**: Rebuild `llama.xcframework` with `build-xcframework-ios.sh`
+2. **Recommended**: Test Qwen3VL / Llama4 multimodal inference to verify M-RoPE KV cache fix
+3. **Recommended**: Test vision model prompt caching behavior (new server feature)
