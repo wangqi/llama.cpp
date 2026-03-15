@@ -81,7 +81,7 @@ No changes required to `build-xcframework-ios.sh` for this upgrade. All 18 visio
 | Aspect | Status |
 |--------|--------|
 | New vision `.cpp` files | None |
-| Build script patch needed | No |
+| Build script patch needed | Yes — `src/debug/mtmd-debug.h` must be copied (mtmd.cpp now includes it) |
 | New cmake flags needed | No |
 
 ---

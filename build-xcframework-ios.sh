@@ -63,6 +63,9 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/mtmd-audio.cpp" src/
     cp -fp "tools/mtmd/mtmd-helper.h" src/
     cp -fp "tools/mtmd/mtmd-helper.cpp" src/
+    # wangqi 2026-03-15: mtmd.cpp now includes "debug/mtmd-debug.h" (added in b8355)
+    mkdir -p src/debug
+    cp -fp "tools/mtmd/debug/mtmd-debug.h" src/debug/
     # NEW: Vision model implementations (added in upstream after b7332)
     # These go to src/clip-models/ to avoid conflict with src/models/ (llama core models)
     mkdir -p src/clip-models
