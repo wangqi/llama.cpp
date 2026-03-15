@@ -1,107 +1,98 @@
-# llama.cpp Upgrade: b8185 → b8240
+# llama.cpp Upgrade: b8240 → b8355
 
-**Date:** 2026-03-08
-**Commits in range:** 59 upstream commits merged
+**Date:** 2026-03-15
+**Commits in range:** ~60 upstream commits merged
 
 ---
 
 ## New Features
 
 ### New Vision Models
-No new vision encoder `.cpp` files were added in this range. All existing encoders (cogvlm, conformer, glm4v, internvl, kimik25, kimivl, llama4, llava, minicpmv, mobilenetv5, nemotron-v2-vl, paddleocr, pixtral, qwen2vl, qwen3vl, siglip, whisper-enc, youtuvl) are already included in `build-xcframework-ios.sh`.
+No new vision encoder `.cpp` files were added in this range. All 18 existing encoders (cogvlm, conformer, glm4v, internvl, kimik25, kimivl, llama4, llava, minicpmv, mobilenetv5, nemotron-v2-vl, paddleocr, pixtral, qwen2vl, qwen3vl, siglip, whisper-enc, youtuvl) are already included in `build-xcframework-ios.sh`.
 
 ### New Text Model Architectures
-No entirely new model architectures were introduced. Model-level changes are internal fixes and optimizations.
+No entirely new model architectures were introduced in this range.
 
 ---
 
 ## Key Changes
 
-### Autoparser: Complete Refactoring of Structured Output Parser (#18675, #20177, #20171)
-The structured output / tool-call parser was completely rewritten with a new PEG-based architecture:
-- **True streaming**: Tool call arguments are now streamed token-by-token instead of buffered
-- **Argument reshuffle**: Optional capability to reorder tool arguments to match schema order
-- **Graceful incomplete output** (#20191): UTF-8 incomplete byte sequences at stream end handled correctly; `needs_more_input` signal instead of parse error
-- Impact: Better tool-calling reliability in streaming mode; existing behavior unchanged for non-streaming use
+### NVFP4 Quantization: Qwen3.5 and Qwen3.5 MoE (#20506)
+- `ggml.h` adds `GGML_TYPE_NVFP4 = 40` and `GGML_FTYPE_MOSTLY_NVFP4 = 26`
+- `llama.h` adds `LLAMA_FTYPE_MOSTLY_NVFP4 = 39`
+- Qwen3.5 and Qwen3.5 MoE tensor wiring added for NVFP4 loading
+- Impact: NVFP4-quantized Qwen3.5 GGUF files can now be loaded. No impact on existing models.
 
-### Context Checkpointing (#20087, #20132, #20232)
-- New `n_ctx_checkpoints` parameter saves KV-cache snapshots every N tokens for faster prompt reuse
-- **KV Cache fix**: M-RoPE checkpoints (used by Qwen3VL, Llama4, Qwen2VL) now restore correctly
-- **Multimodal fix**: Checkpoints are no longer created immediately after an image/video chunk, preventing corrupt cache state when multimodal content appears mid-context
-- iOS impact: Server-based workflows gain faster prompt caching; local inference unchanged
+### Metal: Flash Attention Specialization for HSK=320, HSV=256 (#20549)
+- New Metal kernel variant for Flash Attention with head-state-key=320, head-state-value=256
+- Covers models such as Llama 4 Scout/Maverick which use those non-standard head dimensions
+- Impact: Faster inference for affected models on Apple Silicon; other models unaffected.
 
-### MoE Expert Weight Scaling Refactor (#20235)
-The `build_moe_ffn()` function had a redundant `scale_w: bool` parameter removed from all 25+ MoE model implementations (DeepSeek, Qwen3 MoE, Mistral, Phi3, DBRX, Grok, etc.). Behavior is now controlled purely by the `w_scale` float value. This is a source-level internal refactor; compiled output is equivalent.
+### Metal: Correctness Fixes (#20493, #20426)
+- **l2 norm scale fix** (#20493): Fixed incorrect scale factor in Metal l2_norm kernel — model quality improvement for models using l2 normalization layers
+- **bin kernel optimization** (#20426): Removed divisions from the Metal bin kernel; replaced with multiply-by-reciprocal for correct rounding and throughput improvement
 
-### New API: `llama_model_init_from_user()` (include/llama.h)
-Added a new model creation path that accepts a `gguf_context*` plus a callback `llama_model_set_tensor_data_t` to populate tensor data programmatically, enabling in-memory model construction without GGUF files. No impact on existing iOS usage.
+### KV Cache: Fix State Read Regression (#20273)
+- Fixed incorrect reading of `llama_kv_cell_ext` fields during KV cache state restore
+- Affects use of `llama_state_load_file()` / session cache restore — corrupted ext fields no longer silently ignored
+- Impact: Session cache reliability improvement; relevant when restoring multi-turn context
 
-### IQ Quantization Fixes (#19861)
-Added missing `memset` calls and other correctness fixes in IQ quant kernels. Fixes potential NaN/garbage output for IQ2/IQ3 quantized models on edge-case inputs.
+### Tool Calling: Graceful Undetected Parser Handling (#20286)
+- `common/parser` now prints a clear error and recovers when no tool-call parser is detected, rather than silently failing
+- Impact: Better error reporting for tool-call misconfiguration; no behavioral change when parser is correctly set
 
-### GGUF Locale-Dependent Float Fix (#17331)
-Fixed GGUF metadata float printing that produced wrong values in non-English locales (e.g., `1,5` instead of `1.5`). Improves cross-platform GGUF compatibility.
+### GDN: Crash Fix for Chunked Pooling (#20468)
+- `llama : fix pooling assertion crash in chunked GDN detection path`
+- Prevents assertion failure when GDN (Gated Delta Net) models are run with chunked batch processing
+- Impact: Stability fix for hybrid SSM+attention models (Falcon H1-style) under batch inference
 
-### New GGML Op: GATED_DELTA_NET (#19504)
-Added `GGML_OP_GATED_DELTA_NET` for hybrid SSM+attention architectures (e.g., Falcon H1, Zamba2-style models). Metal backend support expected in a follow-on PR. Currently CPU-only.
+### mtmd API Rename: Audio Sample Rate (#20105)
+- `mtmd_get_audio_bitrate()` renamed to `mtmd_get_audio_sample_rate()` — name was misleading; the value is in Hz (sample rate), not bits/sec (bitrate)
+- Internal references in `mtmd-helper.cpp` updated accordingly
+- Impact on iOS app: The framework headers will update on next XCFramework rebuild. Swift call sites in `llamacpp_swift` that used the old name need updating.
 
-### KDA Chunk Size = 16 (#19827)
-`kda` (Knowledge-Distillation Attention) chunk size reduced to 16. Improves accuracy of KDA-variant models.
-
-### Server: Preserve Anthropic Thinking Blocks (#20120)
-When converting Anthropic API messages to internal format, `<thinking>` blocks are now preserved in the conversion pipeline. Prevents thinking-mode content from being silently dropped in multi-turn conversations on the server.
-
-### CPU Performance: Skip Redundant ROPE Cache Updates (#20149)
-CPU backend skips re-computing the ROPE frequency cache when context parameters have not changed between decode calls. Small latency improvement for CPU-only inference.
+### GATED_DELTA_NET Op: Metal Not Yet Supported (#20455, #20334)
+- `GGML_OP_GATED_DELTA_NET` introduced in previous range; Vulkan backend gained support this range
+- Metal backend support not yet added — hybrid SSM models on Apple Silicon fall back to CPU for this op
+- No crash; performance may be reduced on affected models
 
 ---
 
 ## API Changes
 
+### `ggml/include/ggml.h`
+- **Added**: `GGML_TYPE_NVFP4 = 40` (NVFP4 quantization; 4 blocks, E4M3 scale)
+- **Changed**: `GGML_TYPE_COUNT = 41` (was 40)
+- **Added**: `GGML_FTYPE_MOSTLY_NVFP4 = 26`
+
 ### `include/llama.h`
-- **Added**: `llama_model_set_tensor_data_t` typedef (callback for tensor initialization)
-- **Added**: `llama_model_init_from_user(metadata, set_tensor_data, set_tensor_data_ud, params)` — programmatic model creation API
-- **Comment fixes only**: `indices` (was `indicies`), `probabilities` (was `probabilites`) — no ABI change
+- **Added**: `LLAMA_FTYPE_MOSTLY_NVFP4 = 39`
 
-### `common/chat-peg-parser.h`
-- **Changed**: `tagged_peg_parser::parse_and_extract()` second arg changed from `bool is_partial` to `common_peg_parse_flags extra_flags`
-- **Changed**: `debug: bool` field replaced by `flags: common_peg_parse_flags`
-- Impact on iOS app: none — `common/` is not part of the compiled XCFramework
+### `tools/mtmd/mtmd.h`
+- **Renamed**: `mtmd_get_audio_bitrate()` → `mtmd_get_audio_sample_rate()`
+- **Comment updated**: doc clarifies return value is sample rate in Hz, not bitrate
 
-### State Save/Load Behavioral Changes
-No changes to `llama_state_save_file` / `llama_state_load_file`. Existing session cache files remain valid.
+---
+
+## Build Script
+
+No changes required to `build-xcframework-ios.sh` for this upgrade. All 18 vision encoder files are already listed in the `copy_mtmd_files()` section and the CMakeLists.txt sed patch.
+
+| Aspect | Status |
+|--------|--------|
+| New vision `.cpp` files | None |
+| Build script patch needed | No |
+| New cmake flags needed | No |
 
 ---
 
 ## Risk Assessment
 
-### MEDIUM: Autoparser Architectural Rewrite
-**Problem:** The complete rewrite of the PEG-based structured output parser changes internal state machines significantly. Streaming tool calls may behave differently in edge cases (partial JSON, multi-byte unicode in argument strings).
-**Mitigation:** The new architecture is specifically designed to handle incomplete UTF-8 gracefully. Test tool-calling workflows end-to-end after rebuilding the framework. Existing non-streaming tool calls are unaffected.
-
-### MEDIUM: Multimodal Checkpoint Timing Change
-**Problem:** The fix that prevents checkpointing right after an image chunk (#20232) changes when KV snapshots are created. Any code relying on the (buggy) checkpoint timing may see different cache reuse patterns.
-**Mitigation:** This is a correctness fix. Multimodal inference quality should improve; no code changes required in the Swift layer.
-
-### LOW: MoE Scale_w Removal
-Internal `build_moe_ffn()` signature change affects source compilation only. All MoE models (DeepSeek, Qwen3 MoE, Llama MoE, etc.) continue to work identically at runtime. No GGUF format changes.
-
-### LOW: New GATED_DELTA_NET Op (Metal Not Yet Supported)
-`GGML_OP_GATED_DELTA_NET` is CPU-only. Hybrid Falcon-H1-style models that use this op will fall back to CPU for that op on Metal. No crash; performance may be reduced on affected models.
-
-### LOW: IQ Quant memset Fixes
-Correctness fix. Models using IQ2/IQ3 quantization may produce slightly different (more correct) outputs. Existing downloaded GGUF files do not need to be re-downloaded.
-
----
-
-## Build Script Comparison
-
-| Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
-|--------|--------------------------------|-------------------------------|
-| Platforms | iOS, macOS, visionOS, tvOS, Mac Catalyst | iOS device, iOS simulator, macOS, Mac Catalyst |
-| Signing | Not disabled | Code signing explicitly disabled (`CMAKE_CODE_SIGN_IDENTITY=""`) |
-| C/CXX flags | Via `COMMON_C_FLAGS` variable | Per-build type (`CMAKE_C_FLAGS_RELEASE`, `CMAKE_CXX_FLAGS_RELEASE`) |
-| Vision models | Not handled (no mtmd copy) | Full `copy_mtmd_files()` section + CMakeLists.txt patch |
-| tvOS / visionOS | Included | Excluded (not needed for app targets) |
-
-**Conclusion**: No changes required to `build-xcframework-ios.sh` for this upgrade. All 19 vision encoder files are already listed in the copy section and sed patch.
+| Risk | Level | Description |
+|------|-------|-------------|
+| NVFP4 new quant type | LOW | Additive only; `GGML_TYPE_COUNT` bumped to 41. Existing models unaffected. |
+| Metal l2 norm scale fix | LOW | Correctness fix; model output may change slightly for affected models (improvement). |
+| KV cache state read fix | LOW | Correctness fix; session cache restores more reliable. No format change. |
+| `mtmd_get_audio_sample_rate` rename | LOW | Source-level rename. XCFramework rebuild picks up new name automatically; any direct Swift callers of old name must be updated. |
+| GDN pooling crash fix | LOW | Stability improvement only. |
+| Flash Attention HSK=320 specialization | LOW | Additive Metal kernel. No regression risk for existing models. |
