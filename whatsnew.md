@@ -1,98 +1,80 @@
-# llama.cpp Upgrade: b8240 → b8355
+# llama.cpp Upgrade: b8355 → b8461
 
-**Date:** 2026-03-15
-**Commits in range:** ~60 upstream commits merged
+**Date:** 2026-03-21
+**Commits in range:** 99 upstream commits merged
 
 ---
 
 ## New Features
 
 ### New Vision Models
-No new vision encoder `.cpp` files were added in this range. All 18 existing encoders (cogvlm, conformer, glm4v, internvl, kimik25, kimivl, llama4, llava, minicpmv, mobilenetv5, nemotron-v2-vl, paddleocr, pixtral, qwen2vl, qwen3vl, siglip, whisper-enc, youtuvl) are already included in `build-xcframework-ios.sh`.
+- No new vision encoder `.cpp` files added in this range. All encoders (`cogvlm`, `conformer`, `glm4v`, `internvl`, `kimivl`, `kimik25`, `llama4`, `llava`, `minicpmv`, `mobilenetv5`, `nemotron-v2-vl`, `paddleocr`, `pixtral`, `qwen2vl`, `qwen3vl`, `siglip`, `whisper-enc`, `youtuvl`) were already present.
 
 ### New Text Model Architectures
-No entirely new model architectures were introduced in this range.
+| Model | PR | Notes |
+|-------|-----|-------|
+| Mistral Small 4 | #20649 | New model type detection for Mistral Small 4 |
 
----
+### mtmd Improvements
+- `mtmd: add clip_graph::build_mm()` (#20751) — new multimodal graph builder for improved vision encoding pipelines
+- `server: improve mtmd ctx checkpoints` (#20726) — better checkpoint management for multimodal context across server calls
 
-## Key Changes
+### LoRA Adapter Management
+- `llama: re-enable manual LoRA adapter free` (#19983) — `llama_adapter_lora_free()` is no longer deprecated; adapters not manually freed will be freed with their model
 
-### NVFP4 Quantization: Qwen3.5 and Qwen3.5 MoE (#20506)
-- `ggml.h` adds `GGML_TYPE_NVFP4 = 40` and `GGML_FTYPE_MOSTLY_NVFP4 = 26`
-- `llama.h` adds `LLAMA_FTYPE_MOSTLY_NVFP4 = 39`
-- Qwen3.5 and Qwen3.5 MoE tensor wiring added for NVFP4 loading
-- Impact: NVFP4-quantized Qwen3.5 GGUF files can now be loaded. No impact on existing models.
+### Control Vectors
+- `model: add control vector support where missing` (#20653) — control vectors now supported across more model architectures
 
-### Metal: Flash Attention Specialization for HSK=320, HSV=256 (#20549)
-- New Metal kernel variant for Flash Attention with head-state-key=320, head-state-value=256
-- Covers models such as Llama 4 Scout/Maverick which use those non-standard head dimensions
-- Impact: Faster inference for affected models on Apple Silicon; other models unaffected.
-
-### Metal: Correctness Fixes (#20493, #20426)
-- **l2 norm scale fix** (#20493): Fixed incorrect scale factor in Metal l2_norm kernel — model quality improvement for models using l2 normalization layers
-- **bin kernel optimization** (#20426): Removed divisions from the Metal bin kernel; replaced with multiply-by-reciprocal for correct rounding and throughput improvement
-
-### KV Cache: Fix State Read Regression (#20273)
-- Fixed incorrect reading of `llama_kv_cell_ext` fields during KV cache state restore
-- Affects use of `llama_state_load_file()` / session cache restore — corrupted ext fields no longer silently ignored
-- Impact: Session cache reliability improvement; relevant when restoring multi-turn context
-
-### Tool Calling: Graceful Undetected Parser Handling (#20286)
-- `common/parser` now prints a clear error and recovers when no tool-call parser is detected, rather than silently failing
-- Impact: Better error reporting for tool-call misconfiguration; no behavioral change when parser is correctly set
-
-### GDN: Crash Fix for Chunked Pooling (#20468)
-- `llama : fix pooling assertion crash in chunked GDN detection path`
-- Prevents assertion failure when GDN (Gated Delta Net) models are run with chunked batch processing
-- Impact: Stability fix for hybrid SSM+attention models (Falcon H1-style) under batch inference
-
-### mtmd API Rename: Audio Sample Rate (#20105)
-- `mtmd_get_audio_bitrate()` renamed to `mtmd_get_audio_sample_rate()` — name was misleading; the value is in Hz (sample rate), not bits/sec (bitrate)
-- Internal references in `mtmd-helper.cpp` updated accordingly
-- Impact on iOS app: The framework headers will update on next XCFramework rebuild. Swift call sites in `llamacpp_swift` that used the old name need updating.
-
-### GATED_DELTA_NET Op: Metal Not Yet Supported (#20455, #20334)
-- `GGML_OP_GATED_DELTA_NET` introduced in previous range; Vulkan backend gained support this range
-- Metal backend support not yet added — hybrid SSM models on Apple Silicon fall back to CPU for this op
-- No crash; performance may be reduced on affected models
+### Server Enhancements
+- `server: Add cached_tokens info to oaicompat responses` (#19361) — cached token count now visible in OpenAI-compatible responses
+- `tools/server: support refusal content for Responses API` (#20285) — refusal messages handled in Responses API
 
 ---
 
 ## API Changes
 
-### `ggml/include/ggml.h`
-- **Added**: `GGML_TYPE_NVFP4 = 40` (NVFP4 quantization; 4 blocks, E4M3 scale)
-- **Changed**: `GGML_TYPE_COUNT = 41` (was 40)
-- **Added**: `GGML_FTYPE_MOSTLY_NVFP4 = 26`
-
 ### `include/llama.h`
-- **Added**: `LLAMA_FTYPE_MOSTLY_NVFP4 = 39`
+- **Restored**: `llama_adapter_lora_free()` — previously deprecated, now reinstated as a valid manual free function. Adapters not freed manually will still be freed when the model is destroyed.
 
-### `tools/mtmd/mtmd.h`
-- **Renamed**: `mtmd_get_audio_bitrate()` → `mtmd_get_audio_sample_rate()`
-- **Comment updated**: doc clarifies return value is sample rate in Hz, not bitrate
+### `ggml/include/ggml.h`
+- **Deprecated**: `ggml_type_sizef(enum ggml_type type)` — use `ggml_row_size()` instead. A `GGML_DEPRECATED` macro now wraps it.
+- **Version bump**: ggml bumped to 0.9.8
 
----
-
-## Build Script
-
-No changes required to `build-xcframework-ios.sh` for this upgrade. All 18 vision encoder files are already listed in the `copy_mtmd_files()` section and the CMakeLists.txt sed patch.
-
-| Aspect | Status |
-|--------|--------|
-| New vision `.cpp` files | None |
-| Build script patch needed | Yes — `src/debug/mtmd-debug.h` must be copied (mtmd.cpp now includes it) |
-| New cmake flags needed | No |
+### State Save/Load Behavioral Changes
+- `context: zero output buffer on allocation` (#20781) — output buffers are now zero-initialized; reduces risk of stale data in partially-used context slots. No session cache invalidation required.
 
 ---
 
 ## Risk Assessment
 
-| Risk | Level | Description |
-|------|-------|-------------|
-| NVFP4 new quant type | LOW | Additive only; `GGML_TYPE_COUNT` bumped to 41. Existing models unaffected. |
-| Metal l2 norm scale fix | LOW | Correctness fix; model output may change slightly for affected models (improvement). |
-| KV cache state read fix | LOW | Correctness fix; session cache restores more reliable. No format change. |
-| `mtmd_get_audio_sample_rate` rename | LOW | Source-level rename. XCFramework rebuild picks up new name automatically; any direct Swift callers of old name must be updated. |
-| GDN pooling crash fix | LOW | Stability improvement only. |
-| Flash Attention HSK=320 specialization | LOW | Additive Metal kernel. No regression risk for existing models. |
+### MEDIUM: ggml_type_sizef Deprecation
+**Problem:** `ggml_type_sizef()` is now wrapped in `GGML_DEPRECATED` — compilers may emit warnings if used in our code.
+**Mitigation:** Search codebase for any direct calls; replace with `ggml_row_size()`. Our Swift wrapper (`llamacpp_swift`) is unlikely to call this directly, but verify after building.
+
+### LOW: LoRA Free Reinstatement
+`llama_adapter_lora_free()` is no longer deprecated. No behavior change for our app — we do not call it directly, and adapters are freed with the model.
+
+### LOW: Jinja Parser Fixes
+`jinja: fix heap OOB read in value equality comparison` (#20782) and `common/parser: fix out_of_range crash in throw path` (#20777) are stability-only fixes with no API changes.
+
+### LOW: Common Parser Prompt Corruption Fix
+`common/parser: fix nasty bug causing subtle corruption of generation prompt` (#20825) — only affects models using GPT-OSS or similar parsers; no action needed.
+
+---
+
+## Build Script Comparison
+
+| Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
+|--------|--------------------------------|-------------------------------|
+| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
+| Model files | All 18 encoders present | All 18 encoders present — in sync |
+
+**No structural changes** needed to `build-xcframework-ios.sh` — all vision encoder `.cpp` files were already added in previous upgrades.
+
+---
+
+## Action Items
+
+1. **Recommended**: Build xcframework and run a local vision model test to verify `clip_graph::build_mm()` integration is stable.
+2. **Recommended**: Check `llamacpp_swift` and any bridging code for calls to `ggml_type_sizef` and replace with `ggml_row_size()` if found.
+3. **No session cache invalidation required** — `context: zero output buffer` does not change the serialized format.
