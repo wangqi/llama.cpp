@@ -63,6 +63,9 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/mtmd-audio.cpp" src/
     cp -fp "tools/mtmd/mtmd-helper.h" src/
     cp -fp "tools/mtmd/mtmd-helper.cpp" src/
+    # wangqi 2026-03-28: mtmd.cpp now includes "mtmd-image.h" (added in b8565)
+    cp -fp "tools/mtmd/mtmd-image.h" src/
+    cp -fp "tools/mtmd/mtmd-image.cpp" src/
     # wangqi 2026-03-15: mtmd.cpp now includes "debug/mtmd-debug.h" (added in b8355)
     mkdir -p src/debug
     cp -fp "tools/mtmd/debug/mtmd-debug.h" src/debug/
@@ -93,6 +96,8 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/nemotron-v2-vl.cpp" src/clip-models/
     # wangqi 2026-02-24: Added new vision encoder from b8145 upgrade (PaddleOCR-VL)
     cp -fp "tools/mtmd/models/paddleocr.cpp" src/clip-models/
+    # wangqi 2026-03-28: Added new vision encoder from b8565 upgrade (DeepSeekOCR)
+    cp -fp "tools/mtmd/models/deepseekocr.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -114,8 +119,14 @@ copy_mtmd_files() {
     # TO DEBUG: Check src/CMakeLists.txt after build fails to see actual format.
     #           Run: grep -n "mtmd-helper" src/CMakeLists.txt
     # ============================================================================
+    # wangqi 2026-03-28: mtmd-image.cpp added in b8565 but missing from src/CMakeLists.txt
+    if ! grep -q "mtmd-image.cpp" src/CMakeLists.txt; then
+        sed -i '' 's|mtmd-audio.cpp|mtmd-audio.cpp\
+            mtmd-image.cpp|' src/CMakeLists.txt
+        echo "Patched src/CMakeLists.txt to include mtmd-image.cpp"
+    fi
     # Check for the LAST model in our list to ensure patch is up-to-date
-    if ! grep -q "clip-models/paddleocr.cpp" src/CMakeLists.txt; then
+    if ! grep -q "clip-models/deepseekocr.cpp" src/CMakeLists.txt; then
         sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
             clip-models/cogvlm.cpp\
             clip-models/internvl.cpp\
@@ -134,7 +145,8 @@ copy_mtmd_files() {
             clip-models/mobilenetv5.cpp\
             clip-models/kimik25.cpp\
             clip-models/nemotron-v2-vl.cpp\
-            clip-models/paddleocr.cpp|' src/CMakeLists.txt
+            clip-models/paddleocr.cpp\
+            clip-models/deepseekocr.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }

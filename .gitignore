@@ -158,3 +158,5 @@ src/mtmd-audio.h
 src/clip-graph.h
 src/clip-model.h
 src/clip-models/
+src/mtmd-image.cpp
+src/mtmd-image.h

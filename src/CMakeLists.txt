@@ -151,7 +151,27 @@ add_library(llama
             clip.cpp
             mtmd.cpp
             mtmd-audio.cpp
+            mtmd-image.cpp
             mtmd-helper.cpp
+            clip-models/cogvlm.cpp
+            clip-models/internvl.cpp
+            clip-models/kimivl.cpp
+            clip-models/llama4.cpp
+            clip-models/llava.cpp
+            clip-models/minicpmv.cpp
+            clip-models/pixtral.cpp
+            clip-models/qwen2vl.cpp
+            clip-models/qwen3vl.cpp
+            clip-models/siglip.cpp
+            clip-models/whisper-enc.cpp
+            clip-models/conformer.cpp
+            clip-models/glm4v.cpp
+            clip-models/youtuvl.cpp
+            clip-models/mobilenetv5.cpp
+            clip-models/kimik25.cpp
+            clip-models/nemotron-v2-vl.cpp
+            clip-models/paddleocr.cpp
+            clip-models/deepseekocr.cpp
             clip-models/cogvlm.cpp
             clip-models/internvl.cpp
             clip-models/kimivl.cpp
