@@ -8,6 +8,17 @@
 //
 // TODO: for optimal performance, become function of the device and work size
 
+// PrismML Q1_0: 1-bit quantization Metal tuning constants
+// Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
+// TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
+// See: helper/docs/llama_cpp_prism.md
+// wangqi modified 2026-04-03
+#define N_R0_Q1_0 4
+#define N_SG_Q1_0 2
+
+#define N_R0_Q1_0_g128 4
+#define N_SG_Q1_0_g128 2
+
 #define N_R0_Q4_0 4
 #define N_SG_Q4_0 2
 

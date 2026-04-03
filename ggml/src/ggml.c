@@ -726,6 +726,27 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .to_float                 = (ggml_to_float_t) dequantize_row_nvfp4,
         .from_float_ref           = (ggml_from_float_t)quantize_row_nvfp4_ref,
     },
+    // PrismML Q1_0: 1-bit quantization support for Bonsai models
+    // Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
+    // TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
+    // See: helper/docs/llama_cpp_prism.md
+    // wangqi modified 2026-04-03
+    [GGML_TYPE_Q1_0_g128] = {
+        .type_name                = "q1_0_g128",
+        .blck_size                = QK1_0_g128,
+        .type_size                = sizeof(block_q1_0_g128),
+        .is_quantized             = true,
+        .to_float                 = (ggml_to_float_t) dequantize_row_q1_0_g128,
+        .from_float_ref           = (ggml_from_float_t) quantize_row_q1_0_g128_ref,
+    },
+    [GGML_TYPE_Q1_0] = {
+        .type_name                = "q1_0",
+        .blck_size                = QK1_0,
+        .type_size                = sizeof(block_q1_0),
+        .is_quantized             = true,
+        .to_float                 = (ggml_to_float_t) dequantize_row_q1_0,
+        .from_float_ref           = (ggml_from_float_t) quantize_row_q1_0_ref,
+    },
     [GGML_TYPE_Q2_K] = {
         .type_name                = "q2_K",
         .blck_size                = QK_K,
@@ -1389,6 +1410,10 @@ enum ggml_type ggml_ftype_to_ggml_type(enum ggml_ftype ftype) {
         case GGML_FTYPE_MOSTLY_Q8_0:          wtype = GGML_TYPE_Q8_0;  break;
         case GGML_FTYPE_MOSTLY_MXFP4:         wtype = GGML_TYPE_MXFP4; break;
         case GGML_FTYPE_MOSTLY_NVFP4:         wtype = GGML_TYPE_NVFP4; break;
+        // PrismML Q1_0: 1-bit quantization ftype mapping
+        // wangqi modified 2026-04-03
+        case GGML_FTYPE_MOSTLY_Q1_0:          wtype = GGML_TYPE_Q1_0;       break;
+        case GGML_FTYPE_MOSTLY_Q1_0_g128:     wtype = GGML_TYPE_Q1_0_g128;  break;
         case GGML_FTYPE_MOSTLY_Q2_K:          wtype = GGML_TYPE_Q2_K;  break;
         case GGML_FTYPE_MOSTLY_Q3_K:          wtype = GGML_TYPE_Q3_K;  break;
         case GGML_FTYPE_MOSTLY_Q4_K:          wtype = GGML_TYPE_Q4_K;  break;
@@ -7659,6 +7684,10 @@ size_t ggml_quantize_chunk(
         case GGML_TYPE_Q8_0:    result = quantize_q8_0(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_MXFP4:   result = quantize_mxfp4(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_NVFP4:   result = quantize_nvfp4(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
+        // PrismML Q1_0: 1-bit quantization dispatch
+        // wangqi modified 2026-04-03
+        case GGML_TYPE_Q1_0:    result = quantize_q1_0(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
+        case GGML_TYPE_Q1_0_g128: result = quantize_q1_0_g128(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q2_K:    result = quantize_q2_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q3_K:    result = quantize_q3_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q4_K:    result = quantize_q4_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;

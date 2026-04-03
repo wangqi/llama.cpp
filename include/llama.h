@@ -154,6 +154,13 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_TQ2_0         = 37, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_MXFP4_MOE     = 38, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_NVFP4         = 39, // except 1d tensors
+        // PrismML Q1_0: 1-bit quantization support for Bonsai models
+        // Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
+        // TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
+        // See: helper/docs/llama_cpp_prism.md
+        // wangqi modified 2026-04-03
+        LLAMA_FTYPE_MOSTLY_Q1_0_g128     = 40, // except 1d tensors
+        LLAMA_FTYPE_MOSTLY_Q1_0          = 41, // except 1d tensors
 
         LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
     };
