@@ -425,6 +425,7 @@ static common_chat_tool special_function_tool_with_optional_param{
         "required": ["arg1"]
     })",
 };
+
 static common_chat_tool empty_args_tool{
     /* .name = */ "empty_args",
     /* .description = */ "A tool that takes no arguments",
@@ -433,6 +434,15 @@ static common_chat_tool empty_args_tool{
         "properties": {}
     })",
 };
+
+static common_chat_tool empty_args_tool_no_properties{
+    /* .name = */ "empty_args_no_props",
+    /* .description = */ "A tool that takes no arguments and has no properties",
+    /* .parameters = */ R"({
+        "type": "object"
+    })",
+};
+
 static common_chat_tool python_tool{
     /* .name = */ "python",
     /* .description = */ "an ipython interpreter",
@@ -576,6 +586,51 @@ static common_chat_tool amount_tool{
             }
         },
         "required": ["orig"]
+    })",
+};
+
+static common_chat_tool toggle_tool{
+    /* .name = */ "toggle",
+    /* .description = */ "Toggle a feature",
+    /* .parameters = */ R"({
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean",
+                "description": "Whether to enable the feature"
+            }
+        },
+        "required": ["enabled"]
+    })",
+};
+
+static common_chat_tool nullable_tool{
+    /* .name = */ "set_nullable",
+    /* .description = */ "Set a nullable value",
+    /* .parameters = */ R"({
+        "type": "object",
+        "properties": {
+            "value": {
+                "type": "null",
+                "description": "A null value"
+            }
+        },
+        "required": ["value"]
+    })",
+};
+
+static common_chat_tool config_tool{
+    /* .name = */ "set_config",
+    /* .description = */ "Set configuration",
+    /* .parameters = */ R"({
+        "type": "object",
+        "properties": {
+            "config": {
+                "type": "object",
+                "description": "Configuration dict"
+            }
+        },
+        "required": ["config"]
     })",
 };
 
@@ -1411,6 +1466,176 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
     })";
 
     {
+        // Qwen3.5 (basically same as Nemotron, but keeping separate tests just in case)
+        auto tst = peg_tester("models/templates/Qwen3.5-4B.jinja", detailed_debug);
+
+        tst.test("I'm\nthinking</think>Hello, world!\nWhat's up?")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .enable_thinking(true)
+            .expect(message_assist_thoughts)
+            .run();
+
+                tst.test("I'm\nthinking\n</think>\nHello, world!\nWhat's up?")
+            .enable_thinking(true)
+            .reasoning_format(COMMON_REASONING_FORMAT_NONE)
+            .expect_content("<think>\nI'm\nthinking\n</think>\nHello, world!\nWhat's up?")
+            .run();
+
+        tst.test("I'm\nthinking\n</think>\nHello, world!\nWhat's up?")
+            .enable_thinking(true)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .expect(message_assist_thoughts)
+            .run();
+
+        tst.test(
+               "<tool_call>\n"
+               "<function=special_function>\n"
+               "<parameter=arg1>\n1\n</parameter>\n"
+               "</function>\n"
+               "</tool_call>")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ special_function_tool })
+            .expect(message_assist_call)
+            .run();
+
+        tst.test(
+               "I'm\nthinking\n</think>\n"
+               "<tool_call>\n"
+               "<function=special_function>\n"
+               "<parameter=arg1>\n1\n</parameter>\n"
+               "</function>\n"
+               "</tool_call>")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ special_function_tool })
+            .expect(message_assist_call_thoughts)
+            .run();
+
+        tst.test(
+               "<tool_call>\n"
+               "<function=special_function>\n"
+               "<parameter=arg1>\n1\n</parameter>\n"
+               "</function>\n"
+               "</tool_call>\n"
+               "<tool_call>\n"
+               "<function=special_function_with_opt>\n"
+               "<parameter=arg1>\n1\n</parameter>\n"
+               "<parameter=arg2>\n2\n</parameter>\n"
+               "</function>\n"
+               "</tool_call>")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .parallel_tool_calls(true)
+            .tools({
+                special_function_tool, special_function_tool_with_optional_param
+        })
+            .expect_tool_calls({
+                { "special_function", R"({"arg1": 1})", {} },
+                { "special_function_with_opt", R"({"arg1": 1, "arg2": 2})", {} },
+            })
+            .run();
+
+        tst.test(
+               "<tool_call>\n"
+               "<function=python>\n"
+               "<parameter=code>\n"
+               "def hello():\n"
+               "    print(\"Hello, world!\")\n"
+               "\n"
+               "hello()\n"
+               "</parameter>\n"
+               "</function>\n"
+               "</tool_call>")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({
+                python_tool
+        })
+            .expect_tool_calls({
+                { "python", "{\"code\": \"def hello():\\n    print(\\\"Hello, world!\\\")\\n\\nhello()\"}", {} },
+            })
+            .run();
+
+        tst.test(
+               "I need to output the invoice details in JSON\n"
+               "</think>\n"
+               R"({"amount": 123.45, "date": "2025-12-03"})")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .enable_thinking(true)
+            .json_schema(invoice_schema)
+            .expect_reasoning("I need to output the invoice details in JSON")
+            .expect_content(R"({"amount": 123.45, "date": "2025-12-03"})")
+            .run();
+
+        // tool call segment in reasoning
+        tst.test(
+               "Let's call a tool: <tool_call>\n"
+               "<function=python>\n"
+               "<parameter=code>\n"
+               "def hello():\n"
+               "    print(\"Not the real call!\")\n"
+               "\n"
+               "hello()\n"
+               "</parameter>\n"
+               "</function>\n"
+               "</tool_call></think>\n"
+               "<tool_call>\n"
+               "<function=python>\n"
+               "<parameter=code>\n"
+               "def hello():\n"
+               "    print(\"Hello, world!\")\n"
+               "\n"
+               "hello()\n"
+               "</parameter>\n"
+               "</function>\n"
+               "</tool_call>"
+            )
+            .enable_thinking(true)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({
+                python_tool
+        })
+            .expect_reasoning("Let's call a tool: <tool_call>\n"
+               "<function=python>\n"
+               "<parameter=code>\n"
+               "def hello():\n"
+               "    print(\"Not the real call!\")\n"
+               "\n"
+               "hello()\n"
+               "</parameter>\n"
+               "</function>\n"
+               "</tool_call>")
+            .expect_tool_calls({
+                { "python", "{\"code\": \"def hello():\\n    print(\\\"Hello, world!\\\")\\n\\nhello()\"}", {} },
+            })
+            .run();
+
+        // No args tool
+        tst.test(
+               "<tool_call>\n"
+               "<function=empty_args>\n"
+               "</function>\n"
+               "</tool_call>")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ empty_args_tool })
+            .expect(message_with_tool_calls("empty_args", "{}"))
+            .run();
+
+        // No args tool with no properties defined
+        tst.test(
+               "<tool_call>\n"
+               "<function=empty_args_no_props>\n"
+               "</function>\n"
+               "</tool_call>")
+            .enable_thinking(false)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ empty_args_tool_no_properties })
+            .expect(message_with_tool_calls("empty_args_no_props", "{}"))
+            .run();
+    }
+
+    {
         // Ministral-3-14B-Reasoning-2512
         auto tst = peg_tester("models/templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja", detailed_debug);
 
@@ -1690,6 +1915,130 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
     }
 
     {
+        // Google Gemma 4 (tool calling with Gemma4 dict format)
+        auto tst = peg_tester("models/templates/gemma4.jinja");
+
+        tst.test("Hello, world!").expect(simple_assist_msg("Hello, world!")).run();
+
+        // Simple tool call with string argument
+        tst.test(
+                "<|tool_call>call:get_time{city:<|\"|>London<|\"|>}<tool_call|>")
+            .tools({ get_time_tool })
+            .expect(message_with_tool_calls("get_time", R"({"city": "London"})"))
+            .run();
+
+        // Tool call with string argument containing special chars
+        tst.test(
+                "<|tool_call>call:get_time{city:<|\"|>San Francisco<|\"|>}<tool_call|>")
+            .tools({ get_time_tool })
+            .expect(message_with_tool_calls("get_time", R"({"city": "San Francisco"})"))
+            .run();
+
+        // Tool call with empty args
+        tst.test(
+                "<|tool_call>call:empty_args{}<tool_call|>")
+            .tools({ empty_args_tool })
+            .expect(message_with_tool_calls("empty_args", "{}"))
+            .run();
+
+        // Tool call with string and content
+        tst.test(
+                "Hello, world!\nWhat's up?<|tool_call>call:get_time{city:<|\"|>Paris<|\"|>}<tool_call|>")
+            .tools({ get_time_tool })
+            .expect(message_with_content_and_tool_call("Hello, world!\nWhat's up?", "get_time", R"({"city": "Paris"})"))
+            .run();
+
+        // Parallel tool calls
+        tst.test(
+                "<|tool_call>call:get_time{city:<|\"|>London<|\"|>}<tool_call|>"
+                "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>")
+            .tools({ get_time_tool, get_weather_tool })
+            .parallel_tool_calls(true)
+            .expect_tool_calls({
+                { "get_time", R"({"city": "London"})", "" },
+                { "get_weather", R"({"city": "Paris"})", "" },
+            })
+            .run();
+
+        // Tool call with integer argument (number type)
+        tst.test(
+                "<|tool_call>call:special_function{arg1:42}<tool_call|>")
+            .tools({ special_function_tool })
+            .expect(message_with_tool_calls("special_function", R"({"arg1": 42})"))
+            .run();
+
+        // Tool call with negative number argument
+        tst.test(
+                "<|tool_call>call:special_function{arg1:-7}<tool_call|>")
+            .tools({ special_function_tool })
+            .expect(message_with_tool_calls("special_function", R"({"arg1": -7})"))
+            .run();
+
+        // Tool call with decimal number argument
+        tst.test(
+                "<|tool_call>call:amount{orig:3.14}<tool_call|>")
+            .tools({ amount_tool })
+            .expect(message_with_tool_calls("amount", R"({"orig": 3.14})"))
+            .run();
+
+        // Tool call with boolean argument (true)
+        tst.test(
+                "<|tool_call>call:toggle{enabled:true}<tool_call|>")
+            .tools({ toggle_tool })
+            .expect(message_with_tool_calls("toggle", R"({"enabled": true})"))
+            .run();
+
+        // Tool call with boolean argument (false)
+        tst.test(
+                "<|tool_call>call:toggle{enabled:false}<tool_call|>")
+            .tools({ toggle_tool })
+            .expect(message_with_tool_calls("toggle", R"({"enabled": false})"))
+            .run();
+
+        // Tool call with null argument
+        tst.test(
+                "<|tool_call>call:set_nullable{value:null}<tool_call|>")
+            .tools({ nullable_tool })
+            .expect(message_with_tool_calls("set_nullable", R"({"value": null})"))
+            .run();
+
+        // Tool call with array argument (todo list)
+        tst.test(
+                "<|tool_call>call:todo_list{todos:[<|\"|>buy milk<|\"|>,<|\"|>walk dog<|\"|>]}<tool_call|>")
+            .tools({ todo_list })
+            .expect(message_with_tool_calls("todo_list", R"({"todos":["buy milk","walk dog"]})"))
+            .run();
+
+        // Tool call with object/dict argument
+        tst.test(
+                "<|tool_call>call:set_config{config:{theme:<|\"|>dark<|\"|>,count:3}}<tool_call|>")
+            .tools({ config_tool })
+            .expect(message_with_tool_calls("set_config", R"({"config":{"theme":"dark","count":3}})"))
+            .run();
+
+        // Tool call with empty array
+        tst.test(
+                "<|tool_call>call:todo_list{todos:[]}<tool_call|>")
+            .tools({ todo_list })
+            .expect(message_with_tool_calls("todo_list", R"({"todos":[]})"))
+            .run();
+
+        // Tool call with empty dict
+        tst.test(
+                "<|tool_call>call:set_config{config:{}}<tool_call|>")
+            .tools({ config_tool })
+            .expect(message_with_tool_calls("set_config", R"({"config":{}})"))
+            .run();
+
+        // Tool call with scientific notation number
+        tst.test(
+                "<|tool_call>call:amount{orig:1.5e10}<tool_call|>")
+            .tools({ amount_tool })
+            .expect(message_with_tool_calls("amount", R"({"orig": 1.5e10})"))
+            .run();
+    }
+
+    {
         // Qwen-QwQ-32B (reasoning model)
         auto tst = peg_tester("models/templates/Qwen-QwQ-32B.jinja");
 
@@ -1747,6 +2096,22 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
         //     .reasoning_format(COMMON_REASONING_FORMAT_DEEPSEEK)
         //     .expect(message_assist_thoughts)
         //     .run();
+    }
+
+    {
+        // IBM Granite 4.0 (production template shared by h-tiny, h-small, micro)
+        // Uses <tool_call> XML tags for tool calls, tools in system message
+        auto tst = peg_tester("models/templates/ibm-granite-granite-4.0.jinja", detailed_debug);
+
+        tst.test("Hello, world!\nWhat's up?").expect(message_assist).run();
+
+        tst.test(
+               "<tool_call>\n"
+               "{\"name\": \"special_function\", \"arguments\": {\"arg1\": 1}}\n"
+               "</tool_call>")
+            .tools({ special_function_tool })
+            .expect(message_assist_call)
+            .run();
     }
 
     {
@@ -2532,6 +2897,67 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
             .run();
     }
 
+    // LFM2.5 tests - uses plain "List of tools: [...]" and bare [name(args)] without wrapper tokens
+    {
+        auto tst = peg_tester("models/templates/LFM2.5-Instruct.jinja", detailed_debug);
+
+        // Basic content only
+        tst.test("Hello, world!\nWhat's up?").expect(message_assist).run();
+
+        // Single tool call without reasoning
+        tst.test("[special_function(arg1=1)]")
+            .tools({ special_function_tool })
+            .expect(message_assist_call)
+            .run();
+
+        // Tool call with string argument
+        tst.test("[get_time(city=\"XYZCITY\")]")
+            .tools({ get_time_tool })
+            .expect(message_with_tool_calls("get_time", "{\"city\":\"XYZCITY\"}"))
+            .run();
+
+        // Tool call with reasoning (enable_thinking=true)
+        tst.test("<think>I'm\nthinking</think>[special_function(arg1=1)]")
+            .enable_thinking(true)
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ special_function_tool })
+            .expect(message_assist_call_thoughts)
+            .run();
+
+        // Multiple tool calls (parallel)
+        tst.test("[special_function(arg1=1), special_function_with_opt(arg1=1, arg2=2)]")
+            .parallel_tool_calls(true)
+            .tools({
+                special_function_tool, special_function_tool_with_optional_param
+            })
+            .expect_tool_calls({
+                { "special_function", R"({"arg1": 1})", {} },
+                { "special_function_with_opt", R"({"arg1": 1, "arg2": 2})", {} },
+            })
+            .run();
+
+        // Tool call with content before tool call
+        tst.test("Let me check the time.[get_time(city=\"Paris\")]")
+            .tools({ get_time_tool })
+            .expect(message_with_reasoning_content_and_multiple_tool_calls(
+                "", "Let me check the time.", { { "get_time", "{\"city\":\"Paris\"}" } }
+            ))
+            .run();
+
+        // Partial tool call (streaming)
+        tst.test("[special_function(arg1=")
+            .tools({ special_function_tool })
+            .is_partial(true)
+            .expect(simple_assist_msg("", "", "special_function", "{\"arg1\": "))
+            .run();
+
+        // Tool call with empty arguments
+        tst.test("[empty_args()]")
+            .tools({ empty_args_tool })
+            .expect(simple_assist_msg("", "", "empty_args", "{}"))
+            .run();
+    }
+
     // Apertus-8B-Instruct tests - FUNC_NAME_AS_KEY format
     // Format: <|tools_prefix|>[{"function_name": {...arguments...}}]<|tools_suffix|>
     {
@@ -2896,6 +3322,45 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
             .json_schema(invoice_schema)
             .expect_reasoning("I need to output the invoice details in JSON")
             .expect_content(R"({"amount": 123.45, "date": "2025-12-03"})")
+            .run();
+
+
+        // Unsolicited tool calls. There is no good way to handle these, so we return empty content.
+
+        // Builtin function - recipient in role
+        tst.test(
+               "<|channel|>analysis<|message|>I will execute python to say hello<|end|>"
+               "<|start|>assistant to=container.exec<|channel|>commentary<|message|>python3 -c 'print(\"hello\")'")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .expect_reasoning("I will execute python to say hello")
+            .expect_content("")
+            .run();
+
+        // Builtin function - recipient in channel
+        tst.test(
+               "<|channel|>analysis<|message|>I will execute python to say hello<|end|>"
+               "<|start|>assistant<|channel|>commentary to=python <|constrain|>code<|message|>print(\"hello\")")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .expect_reasoning("I will execute python to say hello")
+            .expect_content("")
+            .run();
+
+        // Edge cases
+
+        // "<|channel|>commentary to=assistant" before reasoning
+        tst.test(
+               "<|channel|>commentary to=assistant<|channel|>analysis<|message|>I'm\nthinking<|end|><|start|>assistant<|channel|>final<|message|>Hello, world!\nWhat's "
+               "up?")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .expect(message_assist_thoughts)
+            .run();
+
+        // "<|channel|>commentary to=assistant" before final message
+        tst.test(
+               "<|channel|>analysis<|message|>I'm\nthinking<|end|><|start|>assistant<|channel|>commentary to=assistant<|channel|>final<|message|>Hello, world!\nWhat's "
+               "up?")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .expect(message_assist_thoughts)
             .run();
     }
 
