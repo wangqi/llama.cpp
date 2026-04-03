@@ -1,59 +1,61 @@
-# llama.cpp Upgrade: b8461 → b8565
+# llama.cpp Upgrade: b8565 → b8642
 
-**Date:** 2026-03-28
-**Commits in range:** 110 upstream commits merged
+**Date:** 2026-04-02
+**Commits in range:** ~77 upstream commits merged
 
 ---
 
 ## New Features
 
 ### New Vision Models
-- **DeepSeekOCR** (`deepseekocr.cpp`) — M-RoPE-based OCR vision encoder for DeepSeek-OCR models; supports quantized `v.patch_embd` and Metal-compatible im2col ops
+- **Gemma 4V** (`gemma4v.cpp`) — Gemma 4 multimodal vision encoder; added to build script copy block and CMakeLists.txt sed patch
 
 ### New Text Model Architectures
-| Model | Commit | Notes |
-|-------|--------|-------|
-| F2LLM-v2 (codefuse-ai) | `80322ebda` | CodFuse AI multilingual code model |
+| Model | PR | Notes |
+|-------|-----|-------|
+| Gemma 4 | #21326 | Chat template fix for correct multi-turn behavior |
+| Granite 4.0 | #20804 | Chat template with correct tool_call role mapping |
 
-### Reasoning Improvements
-- `reasoning_content` field now sent back to model across turns via API (`d0fa2c9fb`)
-- `reasoning_format = none` support added for gpt-oss (`e6f2ec01f`)
-- Lazy grammar sampler inhibited while reasoning is active (`59d840209`)
+### KV Cache Improvements
+- SWA (sliding window attention) KV cache no longer quantized — fixes correctness for models using SWA (e.g. Gemma 3 variants)
 
-### Server Enhancements
-- Built-in tools backend support added (`20197b6fe`)
-- Custom socket options to disable `SO_REUSEPORT` (`5c1a7b835`)
+### Quantization
+- Activation rotation before quantization (#21038) — improves output quality for quantized models
 
-### API / Library Updates
-- `cpp-httplib` updated to 0.40.0 (`b0f0dd3e5`)
+### mtmd Multimodal
+- Fix GGUF conversion for audio/vision mmproj files (#21309)
+
+### Jinja / Chat Templates
+- Gemma 4 template fix — relaxed prefill parser to allow leading space (#21240)
+- Granite 4.0 chat template with correct `tool_call` role mapping (#20804)
+- Fix tool call parsing for LFM2 and LFM2.5 models (#21242)
 
 ---
 
 ## API Changes
 
-### `ggml/include/gguf.h`
-- **Added**: `gguf_init_from_file_ptr(FILE *, gguf_init_params)` — load GGUF from an open FILE pointer
-- **Added**: `gguf_write_to_file_ptr(const gguf_context *, FILE *, bool)` — write GGUF to an open FILE pointer
-
 ### `include/llama.h`
-- **Added**: `llama_model_load_from_file_ptr(FILE *, llama_model_params)` — load model from an open FILE pointer
+- **Added** `struct llama_model_tensor_override { const char* pattern; enum ggml_type type; }` — typed tensor type overrides replacing old `void* tensor_types`
+- **Added** `struct llama_model_imatrix_data { const char* name; const float* data; size_t size; }` — typed imatrix struct replacing old `void* imatrix`
+- **Changed** `llama_model_quantize_params.imatrix`: `void*` → `const struct llama_model_imatrix_data*`
+- **Changed** `llama_model_quantize_params.kv_overrides`: `void*` → `const struct llama_model_kv_override*`
+- **Changed** `llama_model_quantize_params.tensor_types` → renamed to `tt_overrides`: `void*` → `const struct llama_model_tensor_override*`
+- **Changed** `llama_model_quantize_params.prune_layers`: `void*` → `const int32_t*`
 
-### mtmd / clip
-- `mtmd: refactor image preprocessing` (`a73bbd5d9`) — internal restructuring, no API surface changes expected
-- `mtmd: add more sanity checks` (`871f1a2d2`) — added bounds/type validation in clip pipeline
+**Impact:** Pure C interface — all opaque `void*` pointers replaced with typed structs. We do not call `llama_model_quantize` from the app; no action required.
 
 ---
 
 ## Risk Assessment
 
-### LOW: DeepSeekOCR vision encoder + new mtmd-image split
-New encoder `deepseekocr.cpp` added to `tools/mtmd/models/`. Additionally, `mtmd.cpp` was refactored to split image preprocessing into `mtmd-image.h` / `mtmd-image.cpp`. Build script patched: both files are now copied to `src/`, and a new sed guard inserts `mtmd-image.cpp` into the `src/CMakeLists.txt` source list (it is absent from the checked-in file). Without this patch the build fails with `fatal error: 'mtmd-image.h' file not found`.
+### LOW: API quantize_params refactor
+Typed replacement of `void*` fields. We do not call quantize from the app; no action required.
 
-### LOW: Reasoning API field `reasoning_content`
-New field sent back to model. If the app parses assistant messages for tool calls, verify that `reasoning_content` in the response doesn't interfere with tool-call extraction logic.
+### LOW: SWA KV cache no longer quantized
+Correctness fix — may slightly increase memory for models with SWA layers, but improves output quality.
 
-### LOW: FILE pointer APIs
-Three new FILE-pointer-based load/write APIs added. No impact on existing code paths that use path-based loading.
+### LOW: Gemma 4V build script patch
+`gemma4v.cpp` added to both the `cp` block and the CMakeLists.txt sed guard. Grep guard updated to check for `gemma4v.cpp`.
 
 ---
 
@@ -62,14 +64,14 @@ Three new FILE-pointer-based load/write APIs added. No impact on existing code p
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| New model files | N/A — cmake-native | Added `deepseekocr.cpp` to `copy_mtmd_files()` and sed CMakeLists.txt patch |
+| New file | `gemma4v.cpp` added upstream | Added to copy block and sed patch |
 
-**No structural changes** to the build script layout required for this upgrade.
+**No structural changes** to the build script beyond the new file addition.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: Rebuild xcframework — `deepseekocr.cpp` must be compiled in for DeepSeek-OCR multimodal support
-2. **Recommended**: Test an existing vision model (e.g. Qwen2-VL) to verify the mtmd image preprocessing refactor (`a73bbd5d9`) doesn't affect inference quality
-3. **Recommended**: Verify reasoning-capable models (DeepSeek-R1, QwQ) still produce correct multi-turn output with `reasoning_content` round-tripped
+1. **REQUIRED**: Rebuild XCFramework to include `gemma4v.cpp` — run `./build-xcframework-ios.sh`
+2. **Recommended**: Test Gemma 4 text generation (template fix)
+3. **Recommended**: Test any SWA-based model (Gemma 3 series) for quality improvement from KV cache fix
