@@ -89,36 +89,13 @@ typedef sycl::half2 ggml_half2;
 #define QK_K 256
 #define K_SCALE_SIZE 12
 
-// PrismML Q1_0: 1-bit quantization support for Bonsai models
-// Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
-// TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
-// See: helper/docs/llama_cpp_prism.md
-// wangqi modified 2026-04-03
-#define QK1_0 32  // MUST match QK8_0 for vec_dot computation!
-typedef struct {
-    ggml_half d;               // delta
-    uint8_t qs[QK1_0 / 8];    // bits / quants
-} block_q1_0;
-static_assert(sizeof(block_q1_0) == sizeof(ggml_half) + QK1_0 / 8, "wrong q1_0 block size/padding");
-
-#define QK1_0_g128 128
-typedef struct {
-    ggml_half d;                   // delta
-    uint8_t qs[QK1_0_g128 / 8];   // bits / quants
-} block_q1_0_g128;
-static_assert(sizeof(block_q1_0_g128) == sizeof(ggml_half) + QK1_0_g128 / 8, "wrong q1_0_g128 block size/padding");
-
 #if defined(GGML_COMMON_DECL_CUDA) || defined(GGML_COMMON_DECL_HIP) || defined(GGML_COMMON_DECL_SYCL)
 // QR = QK / number of values before dequantization
 // QI = number of 32 bit integers before dequantization
 
-// PrismML Q1_0: 1-bit quantization support for Bonsai models
-// wangqi modified 2026-04-03
 #define QI1_0 (QK1_0 / 32)
 #define QR1_0 1
 
-#define QI1_0_g128 (QK1_0_g128 / 32)
-#define QR1_0_g128 1
 
 #define QI4_0 (QK4_0 / (4 * QR4_0))
 #define QR4_0 2
@@ -196,6 +173,13 @@ static_assert(sizeof(block_q1_0_g128) == sizeof(ggml_half) + QK1_0_g128 / 8, "wr
 #else // _MSC_VER
 #define GGML_EXTENSION __extension__
 #endif // _MSC_VER
+
+#define QK1_0 128
+typedef struct {
+    ggml_half d;           // delta
+    uint8_t qs[QK1_0 / 8]; // bits / quants
+} block_q1_0;
+static_assert(sizeof(block_q1_0) == sizeof(ggml_half) + QK1_0 / 8, "wrong q1_0 block size/padding");
 
 #define QK4_0 32
 typedef struct {

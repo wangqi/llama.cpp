@@ -1,26 +1,5 @@
 #include "llama-model-loader.h"
 
-// PrismML Q1_0: GGUF file type ID remap constants
-// Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
-// TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
-// See: helper/docs/llama_cpp_prism.md
-// wangqi modified 2026-04-03
-//
-// PrismML burned these type IDs into their GGUF files (Bonsai-8B etc).
-// Today our internal enum IDs match (identity remap). If upstream claims
-// 41/42 in a future tag:
-//   1. Bump GGML_TYPE_Q1_0_g128 and GGML_TYPE_Q1_0 to new values
-//   2. Update OUR_Q1_0_g128_ID / OUR_Q1_0_ID below
-//   3. Add a runtime remap in ggml tensor type loading code
-// The remap translates old PrismML GGUFs (still encoded as 41/42) to
-// our new internal IDs without requiring users to re-download models.
-// PRISMML_GGUF_Q1_0_g128_ID = 41 (burned into PrismML GGUF files)
-// PRISMML_GGUF_Q1_0_ID       = 42 (burned into PrismML GGUF files)
-// OUR_Q1_0_g128_ID = 41 == GGML_TYPE_Q1_0_g128 today (identity remap)
-// OUR_Q1_0_ID      = 42 == GGML_TYPE_Q1_0 today (identity remap)
-// NOTE: Currently identity remap. No runtime code needed today since IDs match.
-// See helper/docs/llama_cpp_prism.md for upgrade procedure.
-
 #include "ggml-alloc.h"
 #include "ggml.h"
 #include "gguf.h"
@@ -57,6 +36,7 @@ static std::string llama_model_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_ALL_F32:         return "all F32";
         case LLAMA_FTYPE_MOSTLY_F16:      return "F16";
         case LLAMA_FTYPE_MOSTLY_BF16:     return "BF16";
+        case LLAMA_FTYPE_MOSTLY_Q1_0:     return "Q1_0";
         case LLAMA_FTYPE_MOSTLY_Q4_0:     return "Q4_0";
         case LLAMA_FTYPE_MOSTLY_Q4_1:     return "Q4_1";
         case LLAMA_FTYPE_MOSTLY_Q5_0:     return "Q5_0";
@@ -76,10 +56,6 @@ static std::string llama_model_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_Q6_K:     return "Q6_K";
         case LLAMA_FTYPE_MOSTLY_TQ1_0:    return "TQ1_0 - 1.69 bpw ternary";
         case LLAMA_FTYPE_MOSTLY_TQ2_0:    return "TQ2_0 - 2.06 bpw ternary";
-        // PrismML Q1_0: 1-bit quantization ftype name strings
-        // wangqi modified 2026-04-03
-        case LLAMA_FTYPE_MOSTLY_Q1_0:     return "Q1_0";
-        case LLAMA_FTYPE_MOSTLY_Q1_0_g128: return "Q1_0_g128";
         case LLAMA_FTYPE_MOSTLY_IQ2_XXS:  return "IQ2_XXS - 2.0625 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ2_XS:   return "IQ2_XS - 2.3125 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ2_S:    return "IQ2_S - 2.5 bpw";
@@ -399,8 +375,9 @@ namespace GGUFMeta {
             }
         } else {
             if (arr_info.gt == GGUF_TYPE_BOOL) {
-                std::transform((const bool *)arr_info.data, (const bool *)arr_info.data + arr_info.length, result.begin(), [](bool x) {
-                    return static_cast<T>(x);
+                const int8_t * values = (const int8_t *) arr_info.data;
+                std::transform(values, values + arr_info.length, result.begin(), [](int8_t x) {
+                    return static_cast<T>(x != 0);
                 });
             } else {
                 std::copy((const T*)arr_info.data, (const T *)arr_info.data + arr_info.length, result.begin());
@@ -782,10 +759,7 @@ llama_model_loader::llama_model_loader(
             case GGML_TYPE_IQ4_XS:  ftype = LLAMA_FTYPE_MOSTLY_IQ4_XS;  break;
             case GGML_TYPE_IQ3_S:   ftype = LLAMA_FTYPE_MOSTLY_IQ3_S;   break;
             case GGML_TYPE_NVFP4:   ftype = LLAMA_FTYPE_MOSTLY_NVFP4;   break;
-            // PrismML Q1_0: 1-bit quantization ftype detection
-            // wangqi modified 2026-04-03
-            case GGML_TYPE_Q1_0:         ftype = LLAMA_FTYPE_MOSTLY_Q1_0;          break;
-            case GGML_TYPE_Q1_0_g128:    ftype = LLAMA_FTYPE_MOSTLY_Q1_0_g128;     break;
+            case GGML_TYPE_Q1_0:    ftype = LLAMA_FTYPE_MOSTLY_Q1_0;    break;
             default:
                 {
                     LLAMA_LOG_WARN("%s: unknown type %s\n", __func__, ggml_type_name(type_max));
