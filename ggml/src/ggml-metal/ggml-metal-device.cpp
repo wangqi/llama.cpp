@@ -736,20 +736,12 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv(ggml_meta
                     suffix = ne00 % 4 == 0 ? "_4" : "";
                 }
             } break;
-        // PrismML Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv)
-        // Source: https://github.com/PrismML-Eng/llama.cpp (branch: prism)
-        // TEMPORARY: Remove when upstream llama.cpp merges native Q1_0 support
-        // See: helper/docs/llama_cpp_prism.md
+        // Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv)
         // wangqi modified 2026-04-03
         case GGML_TYPE_Q1_0:
             {
                 nsg = N_SG_Q1_0;
                 nr0 = N_R0_Q1_0;
-            } break;
-        case GGML_TYPE_Q1_0_g128:
-            {
-                nsg = N_SG_Q1_0_g128;
-                nr0 = N_R0_Q1_0_g128;
             } break;
         case GGML_TYPE_Q4_0:
             {
@@ -963,17 +955,12 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv_id(ggml_m
                 smem = 32*sizeof(float)*nr0;
                 suffix = ne00 % 4 == 0 ? "_4" : "";
             } break;
-        // PrismML Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv_id)
+        // Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv_id)
         // wangqi modified 2026-04-03
         case GGML_TYPE_Q1_0:
             {
                 nsg = N_SG_Q1_0;
                 nr0 = N_R0_Q1_0;
-            } break;
-        case GGML_TYPE_Q1_0_g128:
-            {
-                nsg = N_SG_Q1_0_g128;
-                nr0 = N_R0_Q1_0_g128;
             } break;
         case GGML_TYPE_Q4_0:
             {
