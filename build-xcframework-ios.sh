@@ -100,6 +100,8 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/deepseekocr.cpp" src/clip-models/
     # wangqi 2026-04-02: Added new vision encoder from b8642 upgrade (Gemma4V)
     cp -fp "tools/mtmd/models/gemma4v.cpp" src/clip-models/
+    # wangqi 2026-04-07: Added new vision encoder from b8690 upgrade (HunyuanOCR)
+    cp -fp "tools/mtmd/models/hunyuanocr.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -128,7 +130,7 @@ copy_mtmd_files() {
         echo "Patched src/CMakeLists.txt to include mtmd-image.cpp"
     fi
     # Check for the LAST model in our list to ensure patch is up-to-date
-    if ! grep -q "clip-models/gemma4v.cpp" src/CMakeLists.txt; then
+    if ! grep -q "clip-models/hunyuanocr.cpp" src/CMakeLists.txt; then
         sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
             clip-models/cogvlm.cpp\
             clip-models/internvl.cpp\
@@ -149,7 +151,8 @@ copy_mtmd_files() {
             clip-models/nemotron-v2-vl.cpp\
             clip-models/paddleocr.cpp\
             clip-models/deepseekocr.cpp\
-            clip-models/gemma4v.cpp|' src/CMakeLists.txt
+            clip-models/gemma4v.cpp\
+            clip-models/hunyuanocr.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }

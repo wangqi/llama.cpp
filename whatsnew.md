@@ -1,77 +1,79 @@
-# llama.cpp Upgrade: b8565 → b8642
+# llama.cpp Upgrade: b8642 → b8690
 
-**Date:** 2026-04-02
-**Commits in range:** ~77 upstream commits merged
+**Date:** 2026-04-07
+**Commits in range:** ~59 upstream commits merged
 
 ---
 
 ## New Features
 
 ### New Vision Models
-- **Gemma 4V** (`gemma4v.cpp`) — Gemma 4 multimodal vision encoder; added to build script copy block and CMakeLists.txt sed patch
+- **HunyuanOCR** (`tools/mtmd/models/hunyuanocr.cpp`) — Tencent Hunyuan OCR-specialized vision encoder, added via PR #21395
 
 ### New Text Model Architectures
 | Model | PR | Notes |
 |-------|-----|-------|
-| Gemma 4 | #21326 | Chat template fix for correct multi-turn behavior |
-| Granite 4.0 | #20804 | Chat template with correct tool_call role mapping |
-
-### KV Cache Improvements
-- SWA (sliding window attention) KV cache no longer quantized — fixes correctness for models using SWA (e.g. Gemma 3 variants)
+| HunyuanOCR | #21395 | Vision-language OCR model from Tencent |
 
 ### Quantization
-- Activation rotation before quantization (#21038) — improves output quality for quantized models
+- **Q1_0 official support** (`ggml: add Q1_0 1-bit quantization support (CPU) #21273`) — Q1_0 is now in upstream ggml. Our custom PrismML Bonsai fork patch is superseded; this build uses the official implementation.
 
-### mtmd Multimodal
-- Fix GGUF conversion for audio/vision mmproj files (#21309)
+### Gemma 4 Fixes
+Multiple Gemma 4 improvements landed in this range:
+- `vocab: add byte token handling to BPE detokenizer for Gemma4 (#21488)`
+- `llama: add custom newline split for Gemma 4 (#21406)`
+- `common: add gemma 4 specialized parser (#21418)`
+- `convert: set "add bos" == True for Gemma 4 (#21500)`
+- `llama-model: read final_logit_softcapping for Gemma 4 (#21390)`
 
-### Jinja / Chat Templates
-- Gemma 4 template fix — relaxed prefill parser to allow leading space (#21240)
-- Granite 4.0 chat template with correct `tool_call` role mapping (#20804)
-- Fix tool call parsing for LFM2 and LFM2.5 models (#21242)
+### Stability Fixes
+- **Qwen2 segfault on long inputs**: `unicode: add custom Qwen2 regex handler to fix segfault on long input (#21257)` — previously crashed for very long prompts
+- **KV cache / iSWA**: `kv-cache: support attention rotation for heterogeneous iSWA (#21513)` — fixes attention for interleaved sliding window attention architectures
 
 ---
 
 ## API Changes
 
-### `include/llama.h`
-- **Added** `struct llama_model_tensor_override { const char* pattern; enum ggml_type type; }` — typed tensor type overrides replacing old `void* tensor_types`
-- **Added** `struct llama_model_imatrix_data { const char* name; const float* data; size_t size; }` — typed imatrix struct replacing old `void* imatrix`
-- **Changed** `llama_model_quantize_params.imatrix`: `void*` → `const struct llama_model_imatrix_data*`
-- **Changed** `llama_model_quantize_params.kv_overrides`: `void*` → `const struct llama_model_kv_override*`
-- **Changed** `llama_model_quantize_params.tensor_types` → renamed to `tt_overrides`: `void*` → `const struct llama_model_tensor_override*`
-- **Changed** `llama_model_quantize_params.prune_layers`: `void*` → `const int32_t*`
+### `ggml/include/ggml.h`
+- **Deprecated**: `ggml_add1` and `ggml_add1_inplace` — now wrapped in `GGML_DEPRECATED(...)`, directing callers to use `ggml_add` / `ggml_add_inplace` instead. Low impact; these were rarely used directly in the iOS bridge.
 
-**Impact:** Pure C interface — all opaque `void*` pointers replaced with typed structs. We do not call `llama_model_quantize` from the app; no action required.
+### `include/llama.h`
+- No breaking changes observed in this range.
+
+### `tools/mtmd/mtmd.h`
+- No breaking changes observed in this range.
+
+### State Save/Load Behavioral Changes
+- `server: fix restore for checkpoints with pos_min == 0 (#21510)` — fixes a server-side checkpoint edge case; no impact on iOS local inference.
 
 ---
 
 ## Risk Assessment
 
-### LOW: API quantize_params refactor
-Typed replacement of `void*` fields. We do not call quantize from the app; no action required.
+### LOW: Q1_0 custom patch superseded
+The Bonsai/PrismML Q1_0 patch is now replaced by the official upstream implementation. Existing Q1_0 GGUF files should remain compatible. No action required, but test with a Bonsai-8B-gguf model after building.
 
-### LOW: SWA KV cache no longer quantized
-Correctness fix — may slightly increase memory for models with SWA layers, but improves output quality.
+### LOW: Gemma 4 tokenizer changes
+Several Gemma 4 tokenizer/formatting fixes were applied. Existing Gemma 4 conversations may have slightly different formatting behavior. No action required.
 
-### LOW: Gemma 4V build script patch
-`gemma4v.cpp` added to both the `cp` block and the CMakeLists.txt sed guard. Grep guard updated to check for `gemma4v.cpp`.
+### LOW: ggml_add1 deprecation
+`ggml_add1` is deprecated. Not used in the iOS bridge layer (`thirdparty/llamacpp_swift`). No action required unless a future upstream removal causes a build warning.
 
 ---
 
-## Build Script Comparison
+## Build Script Changes
 
-| Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
-|--------|--------------------------------|-------------------------------|
-| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| New file | `gemma4v.cpp` added upstream | Added to copy block and sed patch |
+| File | Change |
+|------|--------|
+| `build-xcframework-ios.sh` | Added `cp -fp tools/mtmd/models/hunyuanocr.cpp src/clip-models/` |
+| `build-xcframework-ios.sh` | Updated CMakeLists.txt sed guard to check for `hunyuanocr.cpp`; added to sed patch list |
 
-**No structural changes** to the build script beyond the new file addition.
+**Verify**: `grep "hunyuanocr" thirdparty/llama.cpp/build-xcframework-ios.sh` should show 3 lines (copy, grep guard, sed patch).
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: Rebuild XCFramework to include `gemma4v.cpp` — run `./build-xcframework-ios.sh`
-2. **Recommended**: Test Gemma 4 text generation (template fix)
-3. **Recommended**: Test any SWA-based model (Gemma 3 series) for quality improvement from KV cache fix
+1. **REQUIRED**: Run `./build-xcframework-ios.sh` to rebuild the XCFramework with HunyuanOCR encoder included.
+2. **Recommended**: Test a Bonsai-8B Q1_0 model load to confirm the official Q1_0 path works identically to the custom patch.
+3. **Recommended**: Test Gemma 4 chat to verify tokenizer and formatting fixes are working correctly.
