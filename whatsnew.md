@@ -1,79 +1,53 @@
-# llama.cpp Upgrade: b8642 → b8690
+# llama.cpp Upgrade: tag-b8690 -> tag-b8763
 
-**Date:** 2026-04-07
-**Commits in range:** ~59 upstream commits merged
+## Summary
 
----
+| Item | Detail |
+|------|--------|
+| Previous tag | tag-b8690 |
+| New tag | tag-b8763 |
+| Upgrade date | 2026-04-12 |
+| New vision/audio encoders | dotsocr.cpp, gemma4a.cpp, step3vl.cpp |
+| Build script patched | Yes |
 
-## New Features
+## New Vision/Audio Encoder Files
 
-### New Vision Models
-- **HunyuanOCR** (`tools/mtmd/models/hunyuanocr.cpp`) — Tencent Hunyuan OCR-specialized vision encoder, added via PR #21395
+Three new files added to `tools/mtmd/models/` requiring `build-xcframework-ios.sh` patches:
 
-### New Text Model Architectures
-| Model | PR | Notes |
-|-------|-----|-------|
-| HunyuanOCR | #21395 | Vision-language OCR model from Tencent |
+| File | Model | PR |
+|------|-------|----|
+| `dotsocr.cpp` | Dots.OCR OCR vision model | #17575 |
+| `gemma4a.cpp` | Gemma 4 audio conformer encoder | #21421 |
+| `step3vl.cpp` | Step3-VL-10B vision-language model | #21287 |
 
-### Quantization
-- **Q1_0 official support** (`ggml: add Q1_0 1-bit quantization support (CPU) #21273`) — Q1_0 is now in upstream ggml. Our custom PrismML Bonsai fork patch is superseded; this build uses the official implementation.
+## iOS/macOS Relevant Commits
 
-### Gemma 4 Fixes
-Multiple Gemma 4 improvements landed in this range:
-- `vocab: add byte token handling to BPE detokenizer for Gemma4 (#21488)`
-- `llama: add custom newline split for Gemma 4 (#21406)`
-- `common: add gemma 4 specialized parser (#21418)`
-- `convert: set "add bos" == True for Gemma 4 (#21500)`
-- `llama-model: read final_logit_softcapping for Gemma 4 (#21390)`
+### Vision / Audio
+- `mtmd: add Gemma 4 audio conformer encoder support (#21421)` - new audio encoder for Gemma 4 multimodal
+- `mtmd : add MERaLiON-2 multimodal audio support (#21756)` - uses conformer encoder (no new file)
+- `mtmd: support dots.ocr (#17575)` - new OCR vision encoder
+- `model : support step3-vl-10b (#21287)` - new vision-language model
+- `model : fix multimodal padding token for gemma3n/gemma4 (#21625)` - multimodal fix
 
-### Stability Fixes
-- **Qwen2 segfault on long inputs**: `unicode: add custom Qwen2 regex handler to fix segfault on long input (#21257)` — previously crashed for very long prompts
-- **KV cache / iSWA**: `kv-cache: support attention rotation for heterogeneous iSWA (#21513)` — fixes attention for interleaved sliding window attention architectures
+### Metal / ARM64
+- `metal : add missing mm-id specializations for q1_0 (#21662)` - Q1_0 Metal backend completeness
+- `ggml : fix a few instances of missing GGML_TYPE_Q1_0 cases (#21716)` - Q1_0 type coverage
 
----
+### Gemma 4
+- `common : better align to the updated official gemma4 template (#21704)`
+- `common : enable reasoning budget sampler for gemma4 (#21697)`
+- `model : make Gemma 4 shared-KV tail attn_k tensors optional on load (#21739)`
 
-## API Changes
-
-### `ggml/include/ggml.h`
-- **Deprecated**: `ggml_add1` and `ggml_add1_inplace` — now wrapped in `GGML_DEPRECATED(...)`, directing callers to use `ggml_add` / `ggml_add_inplace` instead. Low impact; these were rarely used directly in the iOS bridge.
-
-### `include/llama.h`
-- No breaking changes observed in this range.
-
-### `tools/mtmd/mtmd.h`
-- No breaking changes observed in this range.
-
-### State Save/Load Behavioral Changes
-- `server: fix restore for checkpoints with pos_min == 0 (#21510)` — fixes a server-side checkpoint edge case; no impact on iOS local inference.
-
----
+### API Changes
+- `include/llama.h`: Added `LLAMA_SPLIT_MODE_TENSOR = 3` to `llama_split_mode` enum (experimental tensor parallelism)
+- `ggml : backend-agnostic tensor parallelism (experimental) (#19378)`
 
 ## Risk Assessment
 
-### LOW: Q1_0 custom patch superseded
-The Bonsai/PrismML Q1_0 patch is now replaced by the official upstream implementation. Existing Q1_0 GGUF files should remain compatible. No action required, but test with a Bonsai-8B-gguf model after building.
-
-### LOW: Gemma 4 tokenizer changes
-Several Gemma 4 tokenizer/formatting fixes were applied. Existing Gemma 4 conversations may have slightly different formatting behavior. No action required.
-
-### LOW: ggml_add1 deprecation
-`ggml_add1` is deprecated. Not used in the iOS bridge layer (`thirdparty/llamacpp_swift`). No action required unless a future upstream removal causes a build warning.
-
----
-
-## Build Script Changes
-
-| File | Change |
-|------|--------|
-| `build-xcframework-ios.sh` | Added `cp -fp tools/mtmd/models/hunyuanocr.cpp src/clip-models/` |
-| `build-xcframework-ios.sh` | Updated CMakeLists.txt sed guard to check for `hunyuanocr.cpp`; added to sed patch list |
-
-**Verify**: `grep "hunyuanocr" thirdparty/llama.cpp/build-xcframework-ios.sh` should show 3 lines (copy, grep guard, sed patch).
-
----
-
-## Action Items
-
-1. **REQUIRED**: Run `./build-xcframework-ios.sh` to rebuild the XCFramework with HunyuanOCR encoder included.
-2. **Recommended**: Test a Bonsai-8B Q1_0 model load to confirm the official Q1_0 path works identically to the custom patch.
-3. **Recommended**: Test Gemma 4 chat to verify tokenizer and formatting fixes are working correctly.
+| Area | Risk | Notes |
+|------|------|-------|
+| New encoder files | Low | Additive only; existing models unaffected |
+| Metal Q1_0 fix | Low | Additive specializations, no behavior change for non-Q1_0 |
+| Gemma 4 fixes | Low | Corrective fixes, improves existing support |
+| API: LLAMA_SPLIT_MODE_TENSOR | Low | New enum value; not used on iOS |
+| Overall | Low | Mostly additive changes; no breaking API changes to llama.h/mtmd.h |
