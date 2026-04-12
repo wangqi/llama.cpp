@@ -736,8 +736,6 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv(ggml_meta
                     suffix = ne00 % 4 == 0 ? "_4" : "";
                 }
             } break;
-        // Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv)
-        // wangqi modified 2026-04-03
         case GGML_TYPE_Q1_0:
             {
                 nsg = N_SG_Q1_0;
@@ -955,8 +953,6 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv_id(ggml_m
                 smem = 32*sizeof(float)*nr0;
                 suffix = ne00 % 4 == 0 ? "_4" : "";
             } break;
-        // Q1_0: 1-bit quantization Metal pipeline dispatch (mul_mv_id)
-        // wangqi modified 2026-04-03
         case GGML_TYPE_Q1_0:
             {
                 nsg = N_SG_Q1_0;
