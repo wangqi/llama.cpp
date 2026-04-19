@@ -1,53 +1,90 @@
-# llama.cpp Upgrade: tag-b8690 -> tag-b8763
+# llama.cpp Upgrade: b8763 → b8843
 
-## Summary
+**Date:** 2026-04-19
+**Commits in range:** ~83 upstream commits merged
 
-| Item | Detail |
-|------|--------|
-| Previous tag | tag-b8690 |
-| New tag | tag-b8763 |
-| Upgrade date | 2026-04-12 |
-| New vision/audio encoders | dotsocr.cpp, gemma4a.cpp, step3vl.cpp |
-| Build script patched | Yes |
+---
 
-## New Vision/Audio Encoder Files
+## New Features
 
-Three new files added to `tools/mtmd/models/` requiring `build-xcframework-ios.sh` patches:
+### New Audio/Vision Encoders
+- **qwen3a.cpp** — Qwen3 audio encoder supporting qwen3-omni and qwen3-asr models (PR #19441)
 
-| File | Model | PR |
-|------|-------|----|
-| `dotsocr.cpp` | Dots.OCR OCR vision model | #17575 |
-| `gemma4a.cpp` | Gemma 4 audio conformer encoder | #21421 |
-| `step3vl.cpp` | Step3-VL-10B vision-language model | #21287 |
-
-## iOS/macOS Relevant Commits
-
-### Vision / Audio
-- `mtmd: add Gemma 4 audio conformer encoder support (#21421)` - new audio encoder for Gemma 4 multimodal
-- `mtmd : add MERaLiON-2 multimodal audio support (#21756)` - uses conformer encoder (no new file)
-- `mtmd: support dots.ocr (#17575)` - new OCR vision encoder
-- `model : support step3-vl-10b (#21287)` - new vision-language model
-- `model : fix multimodal padding token for gemma3n/gemma4 (#21625)` - multimodal fix
+### New Text Model Architectures
+No new text model architectures in this range.
 
 ### Metal / ARM64
-- `metal : add missing mm-id specializations for q1_0 (#21662)` - Q1_0 Metal backend completeness
-- `ggml : fix a few instances of missing GGML_TYPE_Q1_0 cases (#21716)` - Q1_0 type coverage
+- Metal: Fixed Flash Attention support logic (`metal: fix FA support logic`)
+- Metal: Added XIELU unary op (`metal: add XIELU unary op`)
+- Metal: Implemented ROLL op (`metal: Implement ROLL op`)
 
-### Gemma 4
-- `common : better align to the updated official gemma4 template (#21704)`
-- `common : enable reasoning budget sampler for gemma4 (#21697)`
-- `model : make Gemma 4 shared-KV tail attn_k tensors optional on load (#21739)`
+### mtmd / Vision
+- `mtmd_image_tokens_get_decoder_pos()` new API for M-RoPE decoder position (replaces `get_nx`/`get_ny`)
+- `mtmd_decode_use_non_causal()` signature updated: now takes `const mtmd_input_chunk * chunk` param
+- Fixed crash when sending image under 2x2 pixels (`mtmd: fix crash when sending image under 2x2 pixels`)
+- Gemma 4 audio now uses causal attention (`mtmd: use causal attn for gemma 4 audio`)
+- Added `pos_0` parameter to `mtmd_image_tokens_get_decoder_pos` (breaking change in mtmd API)
 
-### API Changes
-- `include/llama.h`: Added `LLAMA_SPLIT_MODE_TENSOR = 3` to `llama_split_mode` enum (experimental tensor parallelism)
-- `ggml : backend-agnostic tensor parallelism (experimental) (#19378)`
+### Server
+- Speculative checkpointing added (`server: speculative checkpointing`)
+- OAI `/v1/audio/transcriptions` API support (`server: support OAI /v1/audio/transcriptions API`)
+- Random media marker support (`server: use random media marker`)
+
+### Build / CMake
+- Upstream now uses `file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")` — our merge conflict resolved to adopt this approach plus `file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")` for clip models. Build script `sed` patch for CMakeLists.txt removed (glob handles it).
+
+### Other
+- Download cancellation and temp file cleanup (`common: add download cancellation and temp file cleanup`)
+- Model: single `llm_build` per arch refactor (`model: using single llm_build per arch`)
+- DeepSeek v3.2 dedicated chat parser + official template
+- `ggml_rope` docs significantly expanded (RoPE documentation)
+
+---
+
+## API Changes
+
+### `tools/mtmd/mtmd.h`
+- **Changed**: `mtmd_decode_use_non_causal(ctx)` -> `mtmd_decode_use_non_causal(ctx, chunk)` — extra `chunk` param; pass `nullptr` for image (existing behavior). **Our Swift code does not call this directly — no change needed.**
+- **Deprecated**: `mtmd_image_tokens_get_nx()` and `mtmd_image_tokens_get_ny()` — marked `DEPRECATED`, use `mtmd_image_tokens_get_decoder_pos()` instead. **Our Swift code does not call these — no action needed.**
+- **Added**: `struct mtmd_decoder_pos { t, x, y, z }` and `mtmd_image_tokens_get_decoder_pos(tokens, pos_0, i)` for M-RoPE decoder position.
+- **Removed**: `MTMD_DEFAULT_IMAGE_MARKER` macro (deprecated in prior release).
+
+### `ggml/include/ggml.h`
+- RoPE documentation block significantly expanded (NORMAL, NEOX, MROPE, IMROPE, VISION modes documented). No API signature changes.
+
+---
 
 ## Risk Assessment
 
-| Area | Risk | Notes |
-|------|------|-------|
-| New encoder files | Low | Additive only; existing models unaffected |
-| Metal Q1_0 fix | Low | Additive specializations, no behavior change for non-Q1_0 |
-| Gemma 4 fixes | Low | Corrective fixes, improves existing support |
-| API: LLAMA_SPLIT_MODE_TENSOR | Low | New enum value; not used on iOS |
-| Overall | Low | Mostly additive changes; no breaking API changes to llama.h/mtmd.h |
+### MEDIUM: mtmd_decode_use_non_causal signature change
+**Problem:** Function takes an extra `const mtmd_input_chunk * chunk` parameter. Any direct C++ caller that uses the old 1-arg form will fail to compile.
+**Mitigation:** Our Swift wrapper (`LLaMa_MModal.swift`) does not call this function directly. No Swift-side changes required. Verify after xcframework rebuild that it compiles cleanly.
+
+### LOW: mtmd_image_tokens_get_nx / get_ny deprecated
+Old APIs still compile (only marked deprecated). No build errors expected. No action required.
+
+### LOW: MTMD_DEFAULT_IMAGE_MARKER removed
+Was deprecated since before b8763. `mtmd_default_marker()` is the replacement. Our code does not use the macro — confirmed by grep.
+
+### LOW: cmake glob for models
+`src/CMakeLists.txt` now globs `models/*.cpp` and `clip-models/*.cpp`. New upstream model files are auto-included on next build. No action required unless a file needs to be excluded.
+
+---
+
+## Build Script Comparison
+
+| Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
+|--------|--------------------------------|-------------------------------|
+| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
+| clip-models copy | N/A (not in official script) | Copies all encoders to src/clip-models/ |
+| CMakeLists patch | N/A | Removed in b8843 (glob now handles it) |
+
+**Structural change:** Removed the `sed` patch block that explicitly listed clip-models in CMakeLists.txt. `file(GLOB)` now handles this automatically.
+
+---
+
+## Action Items
+
+1. **REQUIRED**: Run `./build-xcframework-ios.sh` to rebuild the xcframework with qwen3a.cpp included.
+2. **Recommended**: Smoke-test a vision model (e.g. Qwen3-VL or LLaVA) and an audio model (Whisper) after the rebuild.
+3. **No session cache invalidation needed** — no state save/load format changes in this range.

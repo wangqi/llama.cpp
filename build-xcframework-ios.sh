@@ -106,61 +106,21 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/dotsocr.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/gemma4a.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/step3vl.cpp" src/clip-models/
+    # wangqi 2026-04-19: Added new audio encoder from b8843 upgrade (Qwen3 audio / qwen3-omni / qwen3-asr)
+    cp -fp "tools/mtmd/models/qwen3a.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
-    # FRAGILE: Patch src/CMakeLists.txt to include clip-models/*.cpp
+    # NOTE: src/CMakeLists.txt now uses file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")
+    # since the b8843 merge conflict resolution. No sed patching needed — all files
+    # copied to src/clip-models/ are automatically picked up by the glob.
+    # wangqi 2026-04-19: removed explicit CMakeLists.txt sed patch (was b8763 and earlier)
     # ============================================================================
-    # WHY: Vision model implementations (cogvlm, llava, etc.) are copied to
-    #      src/clip-models/ but src/CMakeLists.txt doesn't know about them.
-    #      We insert them after "mtmd-helper.cpp" in the source file list.
-    #
-    # EXPECTS: src/CMakeLists.txt contains "mtmd-helper.cpp" in a source list.
-    #          The sed command appends clip-models/*.cpp files after it.
-    #
-    # IF THIS BREAKS (common causes):
-    #   1. Upstream renamed/removed "mtmd-helper.cpp" -> update the search pattern
-    #   2. Upstream added new vision models -> add them to the list below
-    #   3. Upstream removed vision models -> remove them from the list below
-    #   4. Upstream changed CMakeLists.txt format -> rewrite the sed pattern
-    #
-    # TO DEBUG: Check src/CMakeLists.txt after build fails to see actual format.
-    #           Run: grep -n "mtmd-helper" src/CMakeLists.txt
-    # ============================================================================
-    # wangqi 2026-03-28: mtmd-image.cpp added in b8565 but missing from src/CMakeLists.txt
+    # wangqi 2026-03-28: mtmd-image.cpp added in b8565 — guard kept for safety on older checkouts
     if ! grep -q "mtmd-image.cpp" src/CMakeLists.txt; then
         sed -i '' 's|mtmd-audio.cpp|mtmd-audio.cpp\
             mtmd-image.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include mtmd-image.cpp"
-    fi
-    # Check for the LAST model in our list to ensure patch is up-to-date
-    if ! grep -q "clip-models/step3vl.cpp" src/CMakeLists.txt; then
-        sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
-            clip-models/cogvlm.cpp\
-            clip-models/internvl.cpp\
-            clip-models/kimivl.cpp\
-            clip-models/llama4.cpp\
-            clip-models/llava.cpp\
-            clip-models/minicpmv.cpp\
-            clip-models/pixtral.cpp\
-            clip-models/qwen2vl.cpp\
-            clip-models/qwen3vl.cpp\
-            clip-models/siglip.cpp\
-            clip-models/whisper-enc.cpp\
-            clip-models/conformer.cpp\
-            clip-models/glm4v.cpp\
-            clip-models/youtuvl.cpp\
-            clip-models/mobilenetv5.cpp\
-            clip-models/kimik25.cpp\
-            clip-models/nemotron-v2-vl.cpp\
-            clip-models/paddleocr.cpp\
-            clip-models/deepseekocr.cpp\
-            clip-models/gemma4v.cpp\
-            clip-models/hunyuanocr.cpp\
-            clip-models/dotsocr.cpp\
-            clip-models/gemma4a.cpp\
-            clip-models/step3vl.cpp|' src/CMakeLists.txt
-        echo "Patched src/CMakeLists.txt to include clip-models/*.cpp"
     fi
 }
 echo "copy mtmd and clip from tools/mtmd/ to src"
