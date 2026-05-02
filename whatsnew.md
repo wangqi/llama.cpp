@@ -1,63 +1,57 @@
-# llama.cpp Upgrade: b8843 → b8933
+# llama.cpp Upgrade: b8933 → b9008
 
-**Date:** 2026-04-25
-**Commits in range:** 86 upstream commits merged
+**Date:** 2026-05-02
+**Commits in range:** 76 upstream commits merged
 
 ---
 
 ## New Features
 
 ### New Vision Models
-- **Reka Edge 2603** (`yasa2.cpp`) — new vision encoder added via `mtmd: Add support for Reka Edge 2603 (#21616)`
+None — all vision encoder `.cpp` files (`qwen3a.cpp`, `yasa2.cpp`, and 25 others) were already present at b8933. No build script changes required.
 
-### Metal / GPU Improvements
-- **Metal Tensor API optimized** for `GGML_OP_MUL_MAT` — reduced kernel dispatch overhead on Apple Silicon (#20962)
-- **Metal event synchronization fix** — corrects synchronization between GPU passes (#22260)
-- **macOS GPU interactivity watchdog workaround** — prevents macOS from throttling GPU during long inference runs (#22216)
-- **Metal: GPU description logging** — prints device name on load (#22318)
+### New Text Model Architectures
+| Model | PR | Notes |
+|-------|-----|-------|
+| Nemotron Nano 3 Omni | #22481 | GGUF convert support; multimodal omni model |
 
-### Vision / Multimodal
-- **HunyuanVL support updated** (#22037) — improved vision-language model pipeline
-- **`LLAMA_ROPE_TYPE_NONE` support in mtmd** (#22242) — broadens compatibility for models without RoPE
-- **M-RoPE position decoding fixes** — `get_n_pos` / `get_decoder_pos` corrected (#22175), `mtmd_decode_use_mrope()` corrected (#22188)
+### Performance — Integer Quantization (i-quants)
+- **Fast matmul kernels for i-quants** (#22504): New tile-based matrix multiplication for IQ2/IQ3/IQ4 quantization types — significant throughput improvement on ARM64/Apple Silicon
+- **Fast mat-vec kernels for i-quants** (#22344): Complementary vector-matrix kernel for single-token decode — reduces latency for quantized models
 
-### Server / API
-- **CVE-2026-21869 security fix** — heap-buffer-overflow from negative `n_discard` (#22267)
-- **LFM2-Audio transcriptions API support** (#22000)
-- **Allow cancel loading model** (#21814)
-- **Anthropic API prefix caching fix** (#21793)
-- **`chat: fix parallel_tool_calls` default** (#22217)
+### ggml Library
+- Bumped to version 0.10.2 (two point releases: 0.10.1 → 0.10.2) with SVE-tuned GEMM kernels and 64-byte aligned tile buffers
+
+### Stability / Correctness
+- **Qwen3 + LLaMA** (#22421): Removed duplicate `wo_s` scale in `build_attn` — fixes subtle inference inaccuracy
+- **Quantization** (#22572): Fixed `--tensor-type` flag being ignored when a default `qtype` was set
+- **llama-mmap** (#22497): Switched to `ftello`/`fseeko` for correct 64-bit file offset on large models
+
+### Server / Tooling
+- Checkpoint host copy optimization for faster state save/load (#22558)
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **Removed**: `llama_params_fit()` and `llama_params_fit_status` enum — no longer in the public API
-- **Removed**: `llama_memory_breakdown_print()` — removed from public header
+- No changes detected between tag-b8933 and tag-b9008.
 
-### `tools/mtmd/mtmd.h`
-- **Changed**: The following functions now take `const mtmd_context *` instead of `mtmd_context *`:
-  - `mtmd_decode_use_non_causal()`
-  - `mtmd_decode_use_mrope()`
-  - `mtmd_support_vision()`
-  - `mtmd_support_audio()`
-  - `mtmd_get_audio_sample_rate()`
-  - Impact: Swift bridge passes context opaquely — no source changes needed in `LLaMa_MModal.swift`.
+### `tools/mtmd/mtmd.h` / `tools/mtmd/clip.h`
+- No changes detected.
+
+### State Save/Load
+- Internal checkpoint memory handling optimized (#22558) — on-disk format unchanged, existing session cache files remain valid.
 
 ---
 
 ## Risk Assessment
 
-### MEDIUM: `llama_params_fit` removed
-**Problem:** Any code calling `llama_params_fit()` will fail to compile.
-**Mitigation:** This function was never called in our Swift bridge (only used in llama.cpp server tools).
+### LOW: Fast i-quant kernel path
+New GEMM/GEMV kernels activate for IQ2*/IQ3*/IQ4* models. If a quantized model produces unexpected output, switch to a K-quant variant. Extremely unlikely on Metal.
 
-### LOW: mtmd const-correctness changes
-Functions querying mtmd_context now require `const` — no callers affected in our bridge.
-
-### LOW: Metal event sync fix
-Correctness fix only; no behavior change visible to Swift callers.
+### LOW: Qwen3/LLaMA wo_s scale fix
+Corrects a pre-existing inaccuracy. Generated text may differ slightly from b8933 for Qwen3 and LLaMA families — expected and correct.
 
 ---
 
@@ -66,15 +60,15 @@ Correctness fix only; no behavior change visible to Swift callers.
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| Model sources | Manual list (may differ) | `file(GLOB)` via `clip-models/*.cpp` (auto-inclusive since b8843) |
-| New model added | `yasa2.cpp` | Added to copy block (2026-04-25) |
+| Vision encoders | Same 27 files | Same 27 files |
+| New files | None | None |
 
-**No structural changes needed** — the `file(GLOB)` pattern in `src/CMakeLists.txt` auto-picks up `yasa2.cpp` once copied.
+**No structural changes needed.**
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: Rebuild xcframework: `cd thirdparty/llama.cpp && ./build-xcframework-ios.sh`
-2. **Recommended**: Smoke-test a vision model (Qwen3-VL or LLaVA) and a text model after the rebuild
-3. **Optional**: Verify Reka Edge 2603 GGUF works if a quantized file is available
+1. **REQUIRED**: Rebuild `llama.cpp.xcframework` with `build-xcframework-ios.sh`
+2. **Recommended**: Test Qwen3 and LLaMA output — minor numerical differences from wo_s fix are expected
+3. **Recommended**: Benchmark IQ2/IQ3/IQ4 models — throughput improvement expected vs b8933
