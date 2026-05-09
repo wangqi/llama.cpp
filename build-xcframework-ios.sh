@@ -110,6 +110,8 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/qwen3a.cpp" src/clip-models/
     # wangqi 2026-04-25: Added new vision encoder from b8933 upgrade (Reka Edge 2603 / yasa2)
     cp -fp "tools/mtmd/models/yasa2.cpp" src/clip-models/
+    # wangqi 2026-05-09: Added new audio encoder from b9090 upgrade (IBM Granite 4.0 Speech)
+    cp -fp "tools/mtmd/models/granite-speech.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
