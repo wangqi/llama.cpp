@@ -2797,23 +2797,16 @@ int ggml_metal_op_flash_attn_ext(ggml_metal_op_t ctx, int idx) {
         //
 #define FATTN_SMEM(nsg) (GGML_PAD((nqptg*(ne00 + 2*GGML_PAD(ne20, 64) + 2*(2*ncpsg)) + is_q*(16*32*(nsg)))*(sizeof(float)/2), 16))
 
-        //int64_t nsgmax = 4;
-        //
-        //if (is_q) {
-        //    nsgmax = 2;
-        //    while (true) {
-        //        const size_t smem = FATTN_SMEM(nsgmax);
-        //        if (smem > props_dev->max_theadgroup_memory_size) {
-        //            break;
-        //        }
-        //        nsgmax *= 2;
-        //    }
-        //    nsgmax /= 2;
-        //}
-
-        // simdgroups per threadgroup (a.k.a. warps)
-        //nsg = ne01 <= nqptg ? MAX(4, MIN(nsgmax, MIN(ne11/ncpsg, (int64_t) pipeline.maxTotalThreadsPerThreadgroup/32))) : 4;
+        // wangqi modified 2026-05-14: cap nsg to device threadgroup memory.
+        // Fixes crash on Apple GPUs reporting maxThreadgroupMemoryLength = 32768
+        // (e.g. iPhone 16 Pro Max) when running Gemma3/4 (head_dim = 512) with
+        // quantized KV cache. The Metal kernel switch only supports nsg in {4, 8},
+        // so we step 8 -> 4 once; nsg = 2/1 cases are not instantiated in the shader.
         int32_t nsg = ne00 >= 512 ? 8 : 4;
+        if (nsg == 8 && FATTN_SMEM(nsg) > props_dev->max_theadgroup_memory_size) {
+            nsg = 4;
+        }
+        GGML_ASSERT(FATTN_SMEM(nsg) <= props_dev->max_theadgroup_memory_size);
 
         const size_t smem = FATTN_SMEM(nsg);
 
