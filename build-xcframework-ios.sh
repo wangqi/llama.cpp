@@ -1,4 +1,9 @@
 #!/bin/bash
+# wangqi 2026-05-22: fail fast and surface piped command failures (previously a
+# tee on the build line could mask cmake/xcodebuild errors and produce an empty
+# xcframework directory).
+set -euo pipefail
+
 #
 # Options
 IOS_MIN_OS_VERSION=16.4
@@ -12,6 +17,9 @@ LLAMA_BUILD_EXAMPLES=OFF
 LLAMA_BUILD_TOOLS=OFF
 LLAMA_BUILD_TESTS=OFF
 LLAMA_BUILD_SERVER=OFF
+# wangqi 2026-05-22: b9279 introduced the unified llama app (PR #23296) which
+# needs build-info.h and fails the framework build; disable it.
+LLAMA_BUILD_APP=OFF
 GGML_METAL=ON
 GGML_METAL_EMBED_LIBRARY=ON
 GGML_BLAS_DEFAULT=ON
@@ -36,6 +44,7 @@ COMMON_CMAKE_ARGS=(
     -DLLAMA_BUILD_TOOLS=${LLAMA_BUILD_TOOLS}
     -DLLAMA_BUILD_TESTS=${LLAMA_BUILD_TESTS}
     -DLLAMA_BUILD_SERVER=${LLAMA_BUILD_SERVER}
+    -DLLAMA_BUILD_APP=${LLAMA_BUILD_APP}
     -DGGML_METAL_EMBED_LIBRARY=${GGML_METAL_EMBED_LIBRARY}
     -DGGML_BLAS_DEFAULT=${GGML_BLAS_DEFAULT}
     -DGGML_METAL=${GGML_METAL}
@@ -48,6 +57,17 @@ COMMON_CMAKE_ARGS=(
 )
 
 copy_mtmd_files() {
+    # wangqi 2026-05-22: clean stale copies before re-copying. Upstream sometimes
+    # renames or removes vision encoders (e.g. b9279 merged hunyuanocr.cpp into
+    # hunyuanvl.cpp). The CMake glob picks up every .cpp left in src/clip-models/,
+    # so a stale file from a previous build will fail compilation against the new
+    # struct names. Wipe the directory before each refresh.
+    rm -rf src/clip-models
+    rm -f src/clip.cpp src/clip.h src/clip-impl.h src/clip-graph.h src/clip-model.h
+    rm -f src/mtmd.cpp src/mtmd.h src/mtmd-audio.cpp src/mtmd-audio.h
+    rm -f src/mtmd-helper.cpp src/mtmd-helper.h src/mtmd-image.cpp src/mtmd-image.h
+    rm -rf src/debug
+
     cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
     # Core CLIP files
     cp -fp "tools/mtmd/clip.h" src/
@@ -101,7 +121,8 @@ copy_mtmd_files() {
     # wangqi 2026-04-02: Added new vision encoder from b8642 upgrade (Gemma4V)
     cp -fp "tools/mtmd/models/gemma4v.cpp" src/clip-models/
     # wangqi 2026-04-07: Added new vision encoder from b8690 upgrade (HunyuanOCR)
-    cp -fp "tools/mtmd/models/hunyuanocr.cpp" src/clip-models/
+    # wangqi 2026-05-22: HunyuanOCR was merged into HunyuanVL in b9279 (PR #23329); file renamed
+    cp -fp "tools/mtmd/models/hunyuanvl.cpp" src/clip-models/
     # wangqi 2026-04-12: Added new vision/audio encoders from b8763 upgrade (Dots.OCR, Gemma4 Audio, Step3-VL)
     cp -fp "tools/mtmd/models/dotsocr.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/gemma4a.cpp" src/clip-models/
@@ -151,7 +172,8 @@ echo "Checking for required tools..."
 check_required_tool "cmake" "Please install CMake 3.28.0 or later (brew install cmake)"
 check_required_tool "xcrun" "Please install Xcode and Xcode Command Line Tools (xcode-select --install)"
 
-set -e
+# wangqi 2026-05-22: set -e is already active from the top of the script; the
+# duplicate line below was a no-op leftover from before set -euo pipefail moved up.
 
 ## Clean up previous builds
 rm -rf build-apple
@@ -617,6 +639,7 @@ cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
     -DLLAMA_BUILD_TOOLS=OFF \
     -DLLAMA_BUILD_TESTS=OFF \
     -DLLAMA_BUILD_SERVER=OFF \
+    -DLLAMA_BUILD_APP=OFF \
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DGGML_BLAS_DEFAULT=ON \
     -DGGML_METAL=ON \
@@ -645,6 +668,7 @@ cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
     -DLLAMA_BUILD_TOOLS=OFF \
     -DLLAMA_BUILD_TESTS=OFF \
     -DLLAMA_BUILD_SERVER=OFF \
+    -DLLAMA_BUILD_APP=OFF \
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DGGML_BLAS_DEFAULT=ON \
     -DGGML_METAL=ON \
@@ -795,5 +819,13 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-maccatalyst/framework/llama.framework \
     -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
+
+# wangqi 2026-05-22: explicit success check. xcodebuild can occasionally report
+# success on stderr while producing an empty xcframework; this catches it.
+if [ ! -d "$(pwd)/build-apple/llama.xcframework/ios-arm64" ]; then
+    echo "ERROR: xcframework was not produced at build-apple/llama.xcframework/ios-arm64"
+    exit 1
+fi
+echo "Verified: build-apple/llama.xcframework/ios-arm64 present"
 
 echo "Done"

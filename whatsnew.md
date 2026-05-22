@@ -1,65 +1,92 @@
-# llama.cpp Upgrade: b9090 → b9165
+# llama.cpp Upgrade: b9165 → b9279
 
-**Date:** 2026-05-15
-**Commits in range:** ~75 upstream commits merged
+**Date:** 2026-05-22
+**Commits in range:** 120 upstream commits merged
 
 ---
 
 ## New Features
 
-### New Vision Models
-- **MiMo v2.5 Vision** (`mimovl.cpp`) — multimodal encoder for MiMo-series vision-language models; added to `src/clip-models/` in build script
+### Vision Model Changes
+- **HunyuanOCR merged into HunyuanVL** (#23329): `tools/mtmd/models/hunyuanocr.cpp` removed, replaced by `hunyuanvl.cpp`. Also fixes OCR vision precision regression.
+- **DeepSeek-OCR image processing fixes** (#23345): img_tool::resize padding refactored; better aspect handling.
+- **mtmd::qwen3a chunks + preprocessing fix** (#23073): correct preproc for Qwen3 audio/omni multimodal chunks.
+- **mtmd::fit_params now considers mmproj** (#21489): mmproj weight memory factored into automatic context sizing.
 
-### New Text Model Architectures
-No new text-only model architectures in this range.
+### New Text Model / Tokenizer Support
+| Item | PR | Notes |
+|------|-----|-------|
+| Carbon-3B HybridDNATokenizer | #23410 | New vocab type for DNA-domain LLM |
+| HybridDNA tokenizer fix | #23466 | Correctness fix for the above |
+| NvFP4 quantized LM head | #23046 | NVIDIA FP4 head support |
 
-### Metal Performance
-- `metal : promote mul_mv/mul_mm batch divisors to function constants` (#22711) — batch divisor values promoted to Metal function constants, reducing pipeline state overhead for matrix-vector and matrix-matrix multiply on Apple Silicon
+### Metal / Apple Silicon
+- **`metal: optimize concat kernel and fix set kernel threads`** (#23411) — faster concat ops, correct dispatch.
+- **`metal: optimize pad + cpy`** (#23354) — faster image-padding paths used by vision encoders.
+- **`metal: tighten input-position loop in kernel_conv_transpose_1d`** (ggml/1477) — smaller register pressure in audio/conv_transpose.
 
-### Multimodal Enhancements
-- `mtmd, server, common: expose modalities to /v1/models` (#22952) — mmproj modality flags (vision/audio) now surfaced via the `/v1/models` endpoint; lightweight capability probe via new `mtmd_get_cap_from_file()` API
+### MTP (Multi-Token Prediction / Speculative Decoding)
+A substantial MTP feature landed across this range:
+- `llama + spec: MTP Support` (#22673) — full MTP plumbing.
+- `Move to backend sampling for MTP draft path` (#23287).
+- `mtp: use inp_out_ids for skipping logit computation` (#23433).
+- `llama: avoid copying logits during prompt decode in MTP` (#23198).
+- `MTP clean-up` (#23269), `clarify MTP layer comment in qwen35.cpp` (#23338).
 
-### Sampling Improvements
-- `backend sampling: support returning post-sampling probs` (#22622) — backend samplers can now return post-sampling token probabilities, enabling richer sampling diagnostics
+### Server / UI / Misc
+- Server: free draft/MTP resources on sleep to fix VRAM leak (#23461).
+- Server: expose prompt token counts in `/slots` (#23454).
+- Vendored `cpp-httplib` bumped to 0.45.0 (#23103).
+- Major UI restructure to `tools/ui/` (#23064) — irrelevant for iOS framework.
+- ggml bumped to version 0.12.0.
+- WAV MIME type improvements + audio format detection (#23396).
 
-### Server Enhancements
-- `server, webui: support continue generation on reasoning models` (#22727)
-- `server, webui: accept continue_final_message flag for vLLM API compat` (#23012)
-
-### Third-Party Library Updates
-- cpp-httplib updated to 0.44.0 (#22919)
+### Stability / Correctness
+- `llama-graph: fix null-buffer crash in llm_graph_input_attn_kv_iswa for SWA-only models` (#23131).
+- `llama: initialize pre-norm embedding mask flag` (#23256).
+- `ggml: Check the right iface method before using the fallback 2d get` (#23306).
+- `common/speculative: fix nullptr crash in get_devices_str` (#23386).
+- `server-context: guarantee there is at least 1 token to decode` (#23280).
+- `fix(flash-attn): replace f32 with kv_type and q_type` (#23372) — Flash attention now respects KV/Q dtypes instead of hardcoded f32.
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **Added**: `LLAMA_STATE_SEQ_FLAGS_NONE 0` — zero-value flag constant for sequence state operations; additive, no action required
+- **Added** enum `llama_context_type` with values `LLAMA_CONTEXT_TYPE_DEFAULT` (0) and `LLAMA_CONTEXT_TYPE_MTP` (1).
+- **Added** `llama_context_params.ctx_type` (`enum llama_context_type`) — selects MTP vs default context.
+- **Added** `llama_context_params.n_rs_seq` (`uint32_t`) — recurrent-state snapshots per seq for rollback (0 = no rollback). **EXPERIMENTAL**.
+- **Added** `llama_n_rs_seq(const llama_context *)`.
+
+Both new struct fields keep the existing fields in place, but **struct layout has changed**. Any Swift bridge that zero-initializes `llama_context_params` via `llama_context_default_params()` is safe; any code that builds the struct field-by-field must add the new fields. Our `llamacpp_swift` bridge uses `llama_context_default_params()` and is unaffected.
 
 ### `tools/mtmd/clip.h`
-- **Added**: `struct clip_cap { bool has_vision; bool has_audio; }` and `clip_get_cap(const char * fname)` — lightweight mmproj capability probe without full context init; additive
+- **Added** `clip_context_params.no_alloc` (bool) — skip backend allocation during init.
+- **Added** `clip_get_mem_usage(const clip_ctx *) → std::map<ggml_backend_dev_t, size_t>` (replaces `clip_has_whisper_encoder`).
+- **Removed** `clip_is_minicpmv`, `clip_is_glm`, `clip_has_whisper_encoder` — all unused by our bridge.
 
 ### `tools/mtmd/mtmd.h`
-- **Added**: `struct mtmd_caps { bool inp_vision; bool inp_audio; }` and `MTMD_API struct mtmd_caps mtmd_get_cap_from_file(const char * mmproj_fname)` — high-level wrapper matching `clip_get_cap`; marked EXPERIMENTAL, breaking changes expected; additive for now
+- **Added** `mtmd_get_memory_usage(mmproj_fname, ctx_params) → std::map<ggml_backend_dev_t, size_t>` (C++ only). Marked unstable / will change without deprecation.
 
 ### State Save/Load Behavioral Changes
-- No behavioral changes to `llama_state_save_file` / `llama_state_load_file` detected.
+- `save-load-state` test refactor (#23196, #23336) reorganizes the harness but does not alter the on-disk format. **No session cache invalidation required.**
 
 ---
 
 ## Risk Assessment
 
-### LOW: MiMo v2.5 Vision encoder (mimovl.cpp)
-New encoder file added to build script. Glob in CMakeLists.txt picks it up automatically. No action beyond the `cp -fp` line already added.
+### LOW: HunyuanOCR file rename
+File `hunyuanocr.cpp` removed in favor of `hunyuanvl.cpp`. Build script patched. No app-side change needed; the unified `mtmd_helper_eval_chunks` flow already picks up the new graph.
 
-### LOW: Metal batch divisor function constants
-Purely additive Metal optimization; no API or behavioral change.
+### LOW: New `llama_context_params` fields
+`ctx_type` and `n_rs_seq` added. Our bridge initializes params via `llama_context_default_params()` so defaults (`LLAMA_CONTEXT_TYPE_DEFAULT` = 0, `n_rs_seq` = 0) are picked up automatically.
 
-### LOW: `mtmd_get_cap_from_file` marked EXPERIMENTAL
-New function, not called by our Swift bridge. No immediate action required; watch for breaking changes in future upgrades.
+### LOW: clip.h removals
+`clip_is_minicpmv`, `clip_is_glm`, `clip_has_whisper_encoder` removed. We do not call any of these from `llamacpp_swift` or app code.
 
-### LOW: Sampling post-sampling probs
-Additive to backend samplers; our Swift bridge does not use the new output field.
+### LOW: MTP plumbing
+MTP is opt-in via `ctx_type = LLAMA_CONTEXT_TYPE_MTP`. We default to non-MTP; no behavior change.
 
 ---
 
@@ -68,15 +95,14 @@ Additive to backend samplers; our Swift bridge does not use the new output field
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| Vision encoders | Glob via CMakeLists | Explicit cp + glob (same result) |
-| New file: mimovl.cpp | Included via glob | Added explicit `cp -fp` line 2026-05-15 |
+| mtmd model copy | via CMake glob | explicit `cp -fp` list (renamed file patched today) |
 
-**No structural changes** required to our build script beyond the `mimovl.cpp` copy line.
+**Structural changes:** one-line rename in `copy_mtmd_files()` — `hunyuanocr.cpp` → `hunyuanvl.cpp`.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: Rebuild the XCFramework to include `mimovl.cpp` (MiMo v2.5 Vision).
-2. **Recommended**: Test an existing vision model (e.g., Qwen3 VL) after rebuild to confirm no regressions.
-3. **Watch**: `mtmd_get_cap_from_file` is marked EXPERIMENTAL — monitor for breaking changes in the next upgrade.
+1. **REQUIRED before building**: `build-xcframework-ios.sh` already patched.
+2. **Recommended**: rebuild the xcframework (`thirdparty/llama.cpp/build-xcframework-ios.sh`) and smoke-test a vision model (HunyuanVL OCR path in particular).
+3. **No session cache invalidation** required.
