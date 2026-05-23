@@ -1872,7 +1872,11 @@ int ggml_metal_op_cpy(ggml_metal_op_t ctx, int idx) {
         nk0 = ne00/ggml_blck_size(op->type);
     }
 
-    int nth = std::min<int>(nk0*ne01, 256);
+    // Fix: b9279 capped nth at 256 (and nk0*ne01), regressing 2x threadgroup
+    // occupancy on Apple A18 cpy hot path (e.g. nk0=512 ran with nth=256 instead
+    // of 512). Restore b9165 formula that scales with pipeline max threads.
+    // wangqi modified 2026-05-22
+    int nth = std::min<int>(nk0, ggml_metal_pipeline_max_theads_per_threadgroup(pipeline));
 
     // when rows are small, we can batch them together in a single threadgroup
     int nrptg = 1;
@@ -1883,7 +1887,9 @@ int ggml_metal_op_cpy(ggml_metal_op_t ctx, int idx) {
             nrptg = (nth + nk0 - 1)/nk0;
             nth   = nk0;
 
-            if (nrptg*nth > 256) {
+            // Fix: was hard-coded 256 on b9279; use pipeline cap to match
+            // restored nth ceiling above. wangqi modified 2026-05-22
+            if (nrptg*nth > ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) {
                 nrptg--;
             }
         }

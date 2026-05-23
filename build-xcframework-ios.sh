@@ -242,6 +242,11 @@ setup_framework_structure() {
     cp src/mtmd-helper.h           ${header_path}
 
     # Create module map (common for all platforms)
+    # clip.h is marked "Internal header, to be used by mtmd only" and uses
+    # `#include <map>` unconditionally; exposing it in the framework module
+    # breaks Clang dependency scanning for any Swift caller because the
+    # framework module isn't declared `requires cplusplus`. Drop clip.h here.
+    # wangqi modified 2026-05-22
     cat > ${module_path}module.modulemap << EOF
 framework module llama {
     header "llama.h"
@@ -253,7 +258,6 @@ framework module llama {
     header "ggml-blas.h"
     header "ggml-opt.h"
     header "gguf.h"
-    header "clip.h"
     header "mtmd.h"
     header "mtmd-helper.h"
 

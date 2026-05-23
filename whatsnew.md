@@ -106,3 +106,13 @@ MTP is opt-in via `ctx_type = LLAMA_CONTEXT_TYPE_MTP`. We default to non-MTP; no
 1. **REQUIRED before building**: `build-xcframework-ios.sh` already patched.
 2. **Recommended**: rebuild the xcframework (`thirdparty/llama.cpp/build-xcframework-ios.sh`) and smoke-test a vision model (HunyuanVL OCR path in particular).
 3. **No session cache invalidation** required.
+
+---
+
+## Local Patches (alongside FA nsg patch)
+
+### Retained Swift-side diagnostics — 2026-05-22
+- `thirdparty/llamacpp_swift/Sources/swift/LLMBase.swift`: `[PERF]` summary line plus `llama_perf_context` / `llama_perf_sampler` dump on session end. Cheap, aids future debugging. C-level log forwarding to `LlamaLogCollector` was already installed by `LLaMa.swift`'s 2026-04-08 static initializer; no separate installer added.
+
+### Restore cpy threadgroup occupancy regressed by upstream `metal: optimize pad + cpy` (#23354) — 2026-05-22
+- `ggml/src/ggml-metal/ggml-metal-ops.cpp` in `ggml_metal_op_cpy`: b9279 changed `nth` to `std::min<int>(nk0*ne01, 256)` and hard-coded the `nrptg*nth > 256` bound. On Apple A18 Pro the cpy pipeline reports `max_tg=1024`, so the 256 ceiling halved threadgroup occupancy whenever `nk0 >= 512` (visible as `[DISPATCH cpy] nk0=512 nth=256` in `app1.txt`). Restored the b9165 formula `nth = std::min<int>(nk0, ggml_metal_pipeline_max_theads_per_threadgroup(pipeline))` and matched the inner bound to the pipeline cap. Confirms ~12–17 % gen-throughput recovery on Bonsai-8B-Q1 (see Phase 3 comparison in `helper/docs/plans/diagnose-llamacpp-b9279-prediction-slowdown.md`). Kept the EOF guard and the new `kargs_cpy` packing introduced in b9279 — they are correctness fixes orthogonal to the occupancy regression.
