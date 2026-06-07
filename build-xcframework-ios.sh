@@ -135,6 +135,14 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/granite-speech.cpp" src/clip-models/
     # wangqi 2026-05-15: Added new vision encoder from b9165 upgrade (MiMo v2.5 Vision)
     cp -fp "tools/mtmd/models/mimovl.cpp" src/clip-models/
+    # wangqi 2026-06-07: Added new encoders from b9553 upgrade
+    # DeepSeek-OCR 2 (PR #20975), Granite 4 Vision (PR #23545), EXAONE 4.5 VL (PR #21733),
+    # Gemma 4 unified audio + unified vision projectors (PRs #24077/#24082/#24088)
+    cp -fp "tools/mtmd/models/deepseekocr2.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/granite4-vision.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/exaone4_5.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/gemma4ua.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/gemma4uv.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -153,7 +161,10 @@ copy_mtmd_files() {
 echo "copy mtmd and clip from tools/mtmd/ to src"
 copy_mtmd_files
 
-XCODE_VERSION=$(xcodebuild -version 2>/dev/null | head -n1 | awk '{ print $2 }')
+# wangqi 2026-06-07: use a single awk that reads to EOF instead of `head -n1 | awk`.
+# Under `set -o pipefail`, `head` closing the pipe early makes xcodebuild get SIGPIPE,
+# which propagated as exit 141 and aborted the whole build intermittently.
+XCODE_VERSION=$(xcodebuild -version 2>/dev/null | awk 'NR==1 { print $2 }')
 MAJOR_VERSION=$(echo $XCODE_VERSION | cut -d. -f1)
 MINOR_VERSION=$(echo $XCODE_VERSION | cut -d. -f2)
 echo "Detected Xcode version: $XCODE_VERSION"
