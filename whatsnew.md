@@ -1,82 +1,78 @@
-# llama.cpp Upgrade: b9279 → b9553
+# llama.cpp Upgrade: b9553 → b9663
 
-**Date:** 2026-06-07
-**Commits in range:** 269 upstream commits merged
+**Date:** 2026-06-16
+**Commits in range:** 113 upstream commits merged
 
 ---
 
 ## New Features
 
-### New Vision / Multimodal Models
-- **deepseekocr2.cpp** — DeepSeek-OCR 2 vision encoder (PR #20975). Subclasses the existing DeepSeek-OCR graph; improved OCR preprocessing.
-- **granite4-vision.cpp** — IBM Granite 4 Vision encoder + model wiring (PR #23545).
-- **exaone4_5.cpp** — EXAONE 4.5 vision encoder (PR #21733); qwen2vl-style patch embedding with GQA attention.
-- **gemma4uv.cpp** — Gemma 4 *unified* vision projector (non-causal vision, FPE/pre-norm fixes) (PRs #24077/#24082/#24088).
-- **gemma4ua.cpp** — Gemma 4 *unified* audio projector; audio RMS-norm eps + projector embedding-size fixes (PRs #23815/#24091).
+### New Vision Models
+- None. All 33 vision/audio encoders under `tools/mtmd/models/*.cpp` are unchanged and already wired into `build-xcframework-ios.sh`.
 
 ### New Text Model Architectures
 | Model | PR | Notes |
 |-------|-----|-------|
-| Gemma4ForCausalLM | #23682 | Text-only Gemma 4 conversion support |
-| Gemma4 MTP | #23398 | Multi-token-prediction speculative path for Gemma 4 |
-| Mellum | #23966 | New code model architecture |
-| EXAONE 4.5 | #21733 | LG AI EXAONE 4.5 implementations |
-| DeepSeek V3.2 (DSA) | #23346 | DeepseekV32ForCausalLM with generic DeepSeek Sparse Attention |
-| Step3.7-Flash | #23845 | Conversion support |
-| talkie-1930-13b | #22596 | New model support |
-| Granite multilingual embeddings R2 | #22716 | granite-embedding 97m/311m multilingual r2 |
-| qwen3 SSM archs | #24031 | Test/arch support for Qwen3 state-space variants |
+| Cohere2 MoE (North Code) | #24260, #24601 | New `LLM_ARCH_COHERE2MOE`; dedicated North Code chat parser (#24615); also feeds the TINY_AYA vocab path |
+| EAGLE3 speculative decoding | #18039 | New `LLM_ARCH_EAGLE3` draft-model arch for speculative decoding |
 
-### Quantization / Tokenizer
-- NVFP4 quantized weights: compressed-tensors NVFP4 conversion (#21095), Mistral3 NVFP4 weight scales (#23629), NVFP4 MTP scale tensors (#23563).
-- Parallelized quant LUT init (#23595) — faster model load.
-- Tokenizer additions: jina-embeddings-v2-base-zh (#18756), LFM2.5-8B-A1B (#23826), MiniCPM5 (#23384), WPM normalizer lowercase (#23899).
+### Multimodal (mtmd) — Video and Batching
+- **Video input support** (#24269): mtmd can now ingest video; refactored video subprocess handling (#24316).
+- **Lazy bitmap API**: `mtmd_bitmap_init_lazy` reads large video frame-by-frame via a callback without loading the whole file into memory; tracks a whole video under one ID.
+- **Batch encoding API** (#24384): new `mtmd_batch_*` functions plus `batch_max_tokens` context param; `build_vit` batching (#24352) for faster multi-image/frame encode.
+- **Post-decode callback** (#24645) and `mtmd_get_marker()` accessor added.
+- Fix: mtmd miscounting `n_tokens` (#24656).
 
-### Metal (Apple Silicon)
-- Templated GLU kernels for f16/f32 (#23882).
-- Restored im2col implementation for large kernels (#23901).
-- Residency-set heartbeat reduced 500ms → 5ms (#24074) — snappier memory residency.
-- Added Apple device id reporting (#23566).
+### Audio / GGML Ops
+- New `GGML_OP_COL2IM_1D` op + `ggml_col2im_1d()` (#24206) for 1D conv-transpose in audio models.
+- Metal: fixed im2col 1D case for audio models (#24220); added `repeat` for bf16 (#24638).
+
+### Graph / Correctness
+- Granite Speech: apply embedding scale when deepstack is not used (#24357).
+- plamo2: fix attention key/value length regression (#24317).
+- Guard iswa `kq_mask` on its own buffer (#24294).
+- LFM2: fix tool-call parsing double-escaping (#24667) and json_schema being ignored (#24377).
+
+### Other
+- HEIC/HEIF image input support in the bundled UI (#24137) — not used by our app.
+- EXIF JPEG orientation handling (#24196).
+- ggml bumped 0.14.0 → 0.15.1.
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **Added** `llama_context_params.n_outputs_max` — max outputs per ubatch (0 = n_batch). New field; zero-init is safe default.
-- **Added** `llama_context_params.ctx_other` — optional source/parent context for sharing results/`llama_memory` between contexts. New field; nullptr default.
-- **Deprecated** `llama_set_warmup(...)` — now `DEPRECATED`; user code should do warmup runs manually. Not called by our wrapper.
-- **Behavioral** `LLAMA_STATE_SEQ_FLAGS_ON_DEVICE`: getting state for a seq_id with this flag now invalidates all prior on-device states for that seq_id. We do not use the on-device state flag.
-
-### `ggml/include/gguf.h`
-- **Added** `gguf_init_from_buffer(...)` (previously commented out) and `gguf_init_from_callback(...)` with `gguf_reader_callback_t` for streamed GGUF parsing (#22341). Additive.
+- No changes in this range.
 
 ### `ggml/include/ggml.h`
-- **Doc-only** `ggml_silu_back` argument comments corrected (a=dy, b=x). No signature change.
-
-### `tools/mtmd/clip.h`
-- **Removed** several low-level helpers: `clip_embd_nbytes`, `clip_embd_nbytes_by_img`, `clip_image_u8_get_data`, `clip_build_img_from_pixels`, `clip_get_newline_tensor`, `clip_encode_float_image`, `clip_image_f32_batch_add_mel`. **Verified none are referenced by our Swift wrapper** (we use the high-level `mtmd_*` API). No impact.
-- **Added** `clip_model_n_batch_max(...)` and `clip_image_size` helpers (`operator==`, `area()`).
+- **Added**: `GGML_OP_COL2IM_1D` enum + `ggml_col2im_1d(ctx, a, s0, oc, p0)`.
+- **Changed**: `ggml_gated_delta_net(...)` gains a trailing `int64_t K` argument (state-snapshot count). Internal to llama.cpp graph build; no app-level call site.
 
 ### `tools/mtmd/mtmd.h`
-- **Added** placeholder-bitmap support: `mtmd_bitmap_init(..., data=nullptr)` creates an empty bitmap for token counting (#23913). Additive.
-- **Added** consecutive-bitmap "frame merge" for qwen-vl video models — handled automatically inside `mtmd_tokenize()` (#21858).
+- **Added**: `mtmd_batch` type + `mtmd_batch_init/free/add_chunk/encode/get_output_embd`; `batch_max_tokens` context param; `mtmd_bitmap_init_lazy` + `mtmd_bitmap_lazy_callback`; `mtmd_get_marker()`; `mtmd_encode_chunk()`.
+- **Deprecated**: `mtmd_encode()` → use `mtmd_encode_chunk()`. Still compiles; our wrapper (`LLaMa_MModal.swift`) uses the higher-level `mtmd_tokenize` / `mtmd_helper_eval_chunks` path, so no change required.
+
+### `tools/mtmd/clip.h` (internal)
+- `clip_image_encode` / `clip_image_batch_encode` now take `std::vector<float> &` instead of `float *`.
+- `clip_model_n_batch_max` replaced by `clip_support_batch()` + `clip_model_n_temporal_merge()`.
+- All internal to the from-source clip build; not part of our Swift surface.
 
 ### State Save/Load Behavioral Changes
-- No change to host-memory `llama_state_save_file` / `llama_state_load_file` format. Only the on-device-state flag (unused by us) changed invalidation semantics. **No session cache invalidation required.**
+- None. No session-cache invalidation required.
 
 ---
 
 ## Risk Assessment
 
-### LOW: New vision/audio encoder files
-5 new `.cpp` files added to `tools/mtmd/models/` and to `copy_mtmd_files()`. The build uses `file(GLOB clip-models/*.cpp)`, so once copied they compile automatically. All five structs are declared in `models.h`. No action beyond the copy block (done).
+### LOW: mtmd/clip internal signature churn
+Several internal clip/mtmd signatures changed, but all are compiled from source as one unit and our Swift wrapper only touches the stable `mtmd_tokenize` / eval-chunks path. No action required.
 
-### LOW: clip.h symbol removal
-Removed low-level clip helpers are not referenced by our wrapper (`LLaMa_MModal.swift` uses `mtmd_*`/`mtmd_helper_*`). Verified by grep over `thirdparty/llamacpp_swift/`, `libs/`, `ai/`.
+### LOW: `ggml_gated_delta_net` K param
+Additive arg consumed inside llama.cpp graph build for gated-delta models (e.g. Qwen3 Next). No app call site.
 
-### LOW: llama.h new fields / deprecation
-`n_outputs_max` and `ctx_other` are additive (safe zero/nullptr defaults). `llama_set_warmup` deprecation is a compiler warning only; not called by our code.
+### LOW: New arches Cohere2 MoE + EAGLE3
+Additive arch registration. Run-on-demand only when such a GGUF is loaded.
 
 ---
 
@@ -85,14 +81,14 @@ Removed low-level clip helpers are not referenced by our wrapper (`LLaMa_MModal.
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| mtmd model sources | compiled in-tree | copied to `src/clip-models/` + GLOB |
+| clip-models copy | n/a (in-tree CMake) | explicit `cp -fp` + CMakeLists sed patch |
 
-**No structural changes** — only the per-encoder copy block was extended for the 5 new files.
+**No structural changes** — no new `tools/mtmd/models/*.cpp` files, so the copy block and CMake sed patch are unchanged.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: Rebuild the xcframework — `cd thirdparty/llama.cpp && ./build-xcframework-ios.sh`.
-2. **Not required**: No session cache invalidation (host-memory state format unchanged).
-3. **Recommended**: Smoke-test one multimodal model (e.g. a Gemma 4 / Granite 4 Vision GGUF) after rebuild to confirm the new encoders link and run.
+1. **REQUIRED**: rebuild the xcframework — `thirdparty/llama.cpp/build-xcframework-ios.sh`.
+2. **Recommended**: smoke-test one vision model (e.g. Qwen3 VL) and one audio model after rebuild to confirm the col2im_1d / im2col-1D and clip signature changes didn't regress.
+3. No session-cache invalidation needed.
