@@ -1,82 +1,74 @@
-# llama.cpp Upgrade: b9663 → b9754
+# llama.cpp Upgrade: b9754 → b9870
 
-**Date:** 2026-06-21
-**Commits in range:** 90 upstream commits merged
+**Date:** 2026-07-03
+**Commits in range:** 117 upstream commits merged
 
 ---
 
 ## New Features
 
-### New Vision Models
-- None. No new `tools/mtmd/models/*.cpp` encoders were added in this range (all 33 existing encoders remain wired into `build-xcframework-ios.sh`).
-
 ### New Text Model Architectures
+
 | Model | PR | Notes |
 |-------|-----|-------|
-| EAGLE3 for Qwen3.5 / Qwen3.6 | #24593 | Speculative-decoding draft support extended to the Qwen3.5/3.6 families |
-| Step3.5 / Step3.7 flash MTP3 | #24340 | Multi-token-prediction speculative path for Step3.5/3.7-Flash |
-| GLM-DSA optional indexer tensors | #24770 | glm-dsa loads DSA indexer tensors as optional (DeepSeek-style sparse attention) |
+| DeepSeek V4 | #24162 | Full new architecture: converter (dsv4), `llm_graph_input_dsv4`, save/load state, Sinkhorn eps routing, RoPE fix, chat template, and Pro-model variant support |
+| MiniCPM 5 | #24889 | New chat/reasoning parser for the MiniCPM 5 family |
+| LFM2.5-230M | #25008 | Architecture label registered for the 230M dense variant |
+| LFM2.5-ColBERT-350M / LFM2.5-Embedding-350M | #24913 | New Liquid AI retrieval/embedding models |
+| Qwen3-Next | #25141 | `t_layer_inp` tensor registered — fixes graph wiring for Qwen3-Next |
+
+### New Audio / Vision Models
+
+- **Granite Speech Plus** (#24818) — extended Granite speech encoder path.
+- **Unlimited-OCR** (#24969) — converter plus parity test for the unlimited-context OCR multimodal path.
+
+### Speculative Decoding
+
+- **DFlash draft support** (#22105) with `--spec-draft-p-min` acceptance control (#25246) and a refactored draft-model conversion path (#25110).
+- **Eagle3 Qwen3 draft models** documented and supported (#24977).
 
 ### Multimodal (mtmd)
-- Model load progress callback added to `mtmd_context_params` (#24865) and surfaced through `clip_context_params`.
-- Batching support added for InternVL (#24775) and for mtmd-cli with video tests (#24778).
-- Preprocessor refactor with `mtmd_image_preproc_out` (#24736); llava-uhd overview-image handling unified to `ov_img_first` (#24769).
-- `mtmd_get_memory_usage` fix (#24867); assorted mtmd bug fixes (#24784); UTF-8 handling fix (#24779).
 
-### Audio / Conv
-- CUDA `col2im_1d` op added (#24417) — completes the 1D conv-transpose path for audio models alongside the existing Metal/CPU ops.
+- Additional input validations in mtmd to reject malformed clip inputs (#25013).
+- `libmtmd` is now bundled into the Apple XCFramework (#21935).
+- mtmd video is disabled on iOS / tvOS / visionOS in the official xcframework build (#25018) — matches our iOS build, which does not ship video.
 
-### Metal
-- BF16 support check in the concat kernel (#24747); F16 and BF16 support added to the concat operator (#24724).
-- `rope_back` operator implemented for Metal (#24725).
+### Engine / Third-party
 
-### Grammar / Jinja
-- New PEG-based AC parser for stricter GBNF grammar generation (#24869, #24839).
-- json-schema-to-grammar spacing aligned with the parsers (#24835).
-- Jinja `call` statement implemented (#24847).
-
-### Server (not used by the embedded engine)
-- Large amount of router / model-management / load-progress work (#23976, #24828, #24843, etc.). Not relevant to the in-app static-library usage.
-
-### Third-party library updates
-- ggml core bumped 0.15.1 → 0.15.2 (ggml/1548).
-- cpp-httplib → 0.48.0 (#24787); BoringSSL → 0.20260616.0 (#24693).
+- ggml core bumped **0.15.2 → 0.15.3** (ggml/1550).
+- cpp-httplib updated to **0.49.0** (#25218).
+- Quantization fix for MoE models with MTP tensors (#24986).
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **Added**: `llama_model_n_layer_nextn(const struct llama_model *)` — number of next-N (MTP) layers, used by speculative decoding. Additive; no removals (remaining hunks are whitespace alignment only).
 
-### `tools/mtmd/mtmd.h`
-- **Added**: `mtmd_progress_callback` typedef plus `progress_callback` / `progress_callback_user_data` fields on `mtmd_context_params`. Additive; `mtmd_context_params_default()` zero-inits them, and our wrapper (`LLaMa_MModal.swift:211`) already uses that initializer — no code change required.
+- **Added**: `LLAMA_API const char * llama_ftype_name(enum llama_ftype ftype);` — returns a human-readable name for a file type.
+- **Added**: `LLAMA_API enum llama_ftype llama_model_ftype(const struct llama_model * model);` — queries a loaded model's file type.
 
-### `tools/mtmd/mtmd-helper.h` (BREAKING for our wrapper)
-- **Changed**: `mtmd_helper_bitmap_init_from_file` and `mtmd_helper_bitmap_init_from_buf` now return a `struct mtmd_helper_bitmap_wrapper { mtmd_bitmap * bitmap; mtmd_helper_video * video_ctx; }` instead of a raw `mtmd_bitmap *` (PR #24865). **Required fix**: `LLaMa_MModal.swift:402` `createBitmapUsingHelperAPI(mediaPath:)` now reads `.bitmap` off the returned wrapper (video path is handled separately via `createBitmapsFromVideo`, so `video_ctx` is unused there). Applied 2026-06-21.
-
-### `tools/mtmd/clip.h` (internal)
-- **Added**: `progress_callback` / `progress_callback_user_data` on `clip_context_params`; overflow `GGML_ASSERT` guard in `clip_image_size::area()` (width/height ≤ 46000).
-- **Removed/changed**: several low-level `clip_*` accessors and image init/free/batch helpers removed; encode signatures made `const`. These are internal-to-mtmd symbols; our Swift wrapper calls none of them (verified — only stale cached `.build` headers reference them). No impact.
+Both are purely additive (non-breaking). No fields removed or signatures changed. `ggml.h`, `gguf.h`, `mtmd.h`, and `clip.h` are unchanged in this range.
 
 ### State Save/Load Behavioral Changes
-- None. No changes to `llama_state_save_file` / `llama_state_load_file` semantics. Existing session cache files remain valid.
+
+- None. DeepSeek V4 adds its own save/load-state handling internal to that architecture; existing session cache files for previously supported models remain valid.
 
 ---
 
 ## Risk Assessment
 
-### MEDIUM: mtmd-helper bitmap-init return type change (RESOLVED)
-`mtmd_helper_bitmap_init_from_file` / `_from_buf` now return `mtmd_helper_bitmap_wrapper` instead of a raw `mtmd_bitmap *`. Broke the wrapper compile (iOS + macOS). Fixed in `LLaMa_MModal.swift:402` by reading `.bitmap`. Both targets build clean.
+### LOW: DeepSeek V4 new architecture
+Additive new model path; does not affect existing models. No action required unless shipping a DSV4 GGUF.
 
-### LOW: mtmd / clip context-params struct growth
-Additive fields only; `mtmd_context_params_default()` zero-inits them and our wrapper uses it. No action required.
+### LOW: New `llama_ftype_name` / `llama_model_ftype` APIs
+Additive C API. Our Swift bridge does not need to adopt them. No action required.
 
-### LOW: clip.h internal API removals
-Removed symbols are not referenced by our wrapper source. No action required.
+### LOW: mtmd validations tightened
+Stricter clip-input validation could reject previously-tolerated malformed inputs, but our bundled multimodal models produce well-formed inputs. No action required.
 
-### LOW: ggml 0.15.1 → 0.15.2 minor bump
-Patch-level; no API breakage. No action required.
+### LOW: PrismML Q1_0 quantization patch
+Verified intact after merge: `GGML_TYPE_Q1_0 = 41` and `GGML_FTYPE_MOSTLY_Q1_0 = 27` remain in `ggml/include/ggml.h`; `// wangqi modified` markers remain in `ggml/src/ggml-metal/ggml-metal-ops.cpp`. No re-application needed.
 
 ---
 
@@ -85,14 +77,14 @@ Patch-level; no API breakage. No action required.
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| clip-models | n/a (in-tree CMake) | explicit `cp -fp` + CMakeLists sed patch (33 encoders) |
+| mtmd video | disabled on i/tv/visionos (#25018) | not shipped (already excluded) |
+| clip-models | CMake-driven | manual copy + sed patch of `src/CMakeLists.txt` |
 
-**No structural changes** — no new `tools/mtmd/models/*.cpp` files, so the copy block and CMake sed patch are unchanged.
+**No structural changes needed.** No new `.cpp` files appeared in `tools/mtmd/models/` in this range — every encoder is already in the copy block and sed patch list. The build script is unchanged.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: rebuild the xcframework — `thirdparty/llama.cpp/build-xcframework-ios.sh`.
-2. **Recommended**: smoke-test one text model and one vision (mtmd) model on device after rebuild to confirm the framework loads and inferences correctly.
-3. No session-cache invalidation needed.
+1. **None required before building.** No new vision encoders, no build-script edits, PrismML patch intact.
+2. **Recommended**: smoke-test one existing GGUF (text) and one multimodal GGUF after the xcframework rebuild to confirm the ggml 0.15.3 bump is clean on Metal.
