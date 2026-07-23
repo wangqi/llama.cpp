@@ -68,8 +68,8 @@
 ### LOW: Additive-only API surface
 Only ggml.h changed among tracked headers, and every change is a new op/function. Existing bindings compile unchanged.
 
-### LOW: PrismML Q1_0 1-bit patch preserved
-`wangqi modified` markers and Q1_0 Metal kernels remain present after the merge; the custom quantization patch survived.
+### LOW: PrismML Q1_0 patch is now upstream (custom patch retired)
+The custom PrismML Q1_0 1-bit patch is **no longer in the tree** (zero `// PrismML` markers). It became redundant: upstream PR #21273 (Pasha Khosravi) added native `GGML_TYPE_Q1_0` (= the former PrismML `Q1_0_g128`, block 128) and dropped the block-32 variant. This landed at b9993, so the tree at b10091 relies on native Q1_0 with no forward-port needed. The only remaining `wangqi modified` marker is the unrelated Metal threadgroup-cap fix in `ggml-metal-ops.cpp`. See `helper/docs/llama_cpp_prism.md`. **Follow-up:** load-test a Bonsai GGUF to confirm the shipped file uses the block-128 layout (block-32 files would need re-quantization).
 
 ### LOW: No new vision encoders
 Build script already lists all 33 `tools/mtmd/models/*.cpp` files; no `build-xcframework-ios.sh` edit needed.
@@ -82,7 +82,7 @@ Build script already lists all 33 `tools/mtmd/models/*.cpp` files; no `build-xcf
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
 | clip-models flatten | N/A | Copies + CMake-patches all mtmd model `.cpp` into `src/clip-models/` |
-| Custom patches | None | PrismML Q1_0 1-bit + Metal threadgroup caps |
+| Custom patches | None | Metal threadgroup caps (PrismML Q1_0 patch retired: now native upstream) |
 
 **No structural changes required this cycle.**
 
