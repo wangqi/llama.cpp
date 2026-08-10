@@ -23,7 +23,8 @@ LLAMA_BUILD_APP=OFF
 GGML_METAL=ON
 GGML_METAL_EMBED_LIBRARY=ON
 GGML_BLAS_DEFAULT=ON
-GGML_METAL_USE_BF16=ON
+# wangqi 2026-08-10: GGML_METAL_USE_BF16 removed upstream (b10333, PR #26604). The ggml-metal
+# CMake option no longer exists, so passing it only produced an unused-variable warning.
 GGML_OPENMP=OFF
 
 COMMON_C_FLAGS="-O3 -fno-finite-math-only -Wno-macro-redefined -Wno-shorten-64-to-32 -Wno-unused-command-line-argument -g"
@@ -48,12 +49,19 @@ COMMON_CMAKE_ARGS=(
     -DGGML_METAL_EMBED_LIBRARY=${GGML_METAL_EMBED_LIBRARY}
     -DGGML_BLAS_DEFAULT=${GGML_BLAS_DEFAULT}
     -DGGML_METAL=${GGML_METAL}
-    -DGGML_METAL_USE_BF16=${GGML_METAL_USE_BF16}
     -DGGML_NATIVE=OFF
     -DGGML_OPENMP=${GGML_OPENMP}
     -DCMAKE_C_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
     -DCMAKE_CXX_FLAGS_RELEASE="-O3 -fno-finite-math-only -DNDEBUG"
     -DLLAMA_OPENSSL=OFF
+    # wangqi 2026-08-10: b10333 added common/subproc.cpp (PR #26102). Upstream only auto-disables
+    # LLAMA_SUBPROCESS when CMAKE_SYSTEM_NAME is iOS; the Mac Catalyst builds configure with
+    # CMAKE_OSX_SYSROOT=macosx (system name Darwin), so the option stayed ON and pulled in
+    # vendor/sheredom/subprocess.h, which calls posix_spawn_file_actions_addchdir_np — marked
+    # unavailable on macCatalyst by the SDK. We build with tools/server/app OFF and never spawn
+    # processes, so turn it off everywhere. subproc.h has an #else stub, so subproc.cpp still
+    # compiles; this also keeps MTMD_VIDEO (ffmpeg) off, which upstream ties to LLAMA_SUBPROCESS.
+    -DLLAMA_SUBPROCESS=OFF
 )
 
 copy_mtmd_files() {
@@ -66,6 +74,8 @@ copy_mtmd_files() {
     rm -f src/clip.cpp src/clip.h src/clip-impl.h src/clip-graph.h src/clip-model.h
     rm -f src/mtmd.cpp src/mtmd.h src/mtmd-audio.cpp src/mtmd-audio.h
     rm -f src/mtmd-helper.cpp src/mtmd-helper.h src/mtmd-image.cpp src/mtmd-image.h
+    # wangqi 2026-08-10: mtmd-helper was split in b10333 (PR #26254, Qwen3-TTS)
+    rm -f src/mtmd-helper-common.h src/mtmd-helper-gen.cpp
     rm -rf src/debug
 
     cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
@@ -83,6 +93,12 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/mtmd-audio.cpp" src/
     cp -fp "tools/mtmd/mtmd-helper.h" src/
     cp -fp "tools/mtmd/mtmd-helper.cpp" src/
+    # wangqi 2026-08-10: b10333 split mtmd-helper into a shared internal header plus an
+    # audio-generation translation unit (PR #26254). mtmd-helper.cpp now includes
+    # mtmd-helper-common.h, so the header is mandatory; mtmd-helper-gen.cpp carries the
+    # mtmd_helper_gen_audio_* symbols declared in mtmd-helper.h.
+    cp -fp "tools/mtmd/mtmd-helper-common.h" src/
+    cp -fp "tools/mtmd/mtmd-helper-gen.cpp" src/
     # wangqi 2026-03-28: mtmd.cpp now includes "mtmd-image.h" (added in b8565)
     cp -fp "tools/mtmd/mtmd-image.h" src/
     cp -fp "tools/mtmd/mtmd-image.cpp" src/
@@ -143,6 +159,15 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/exaone4_5.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/gemma4ua.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/gemma4uv.cpp" src/clip-models/
+    # wangqi 2026-08-10: Added new encoders from b10333 upgrade
+    # MiniMax-M3 vision (PR #25113), MiMo-V2.5 RVQ audio (PR #26190),
+    # Parakeet audio for Nemotron 3 Nano Omni (PR #22520),
+    # Qwen3-TTS generation + speaker encoder (PR #26254)
+    cp -fp "tools/mtmd/models/minimax-m3.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/mimo-audio.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/parakeet.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/qwen3tts-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/qwen3tts-spkenc.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -156,6 +181,13 @@ copy_mtmd_files() {
         sed -i '' 's|mtmd-audio.cpp|mtmd-audio.cpp\
             mtmd-image.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include mtmd-image.cpp"
+    fi
+    # wangqi 2026-08-10: mtmd-helper-gen.cpp added in b10333 — guard kept for safety on
+    # checkouts where src/CMakeLists.txt has not been updated yet
+    if ! grep -q "mtmd-helper-gen.cpp" src/CMakeLists.txt; then
+        sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
+            mtmd-helper-gen.cpp|' src/CMakeLists.txt
+        echo "Patched src/CMakeLists.txt to include mtmd-helper-gen.cpp"
     fi
 }
 echo "copy mtmd and clip from tools/mtmd/ to src"
@@ -658,10 +690,10 @@ cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DGGML_BLAS_DEFAULT=ON \
     -DGGML_METAL=ON \
-    -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
     -DLLAMA_OPENSSL=OFF \
+    -DLLAMA_SUBPROCESS=OFF \
     -S .
 cmake --build build-maccatalyst-arm64 --config Release
 
@@ -687,10 +719,10 @@ cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DGGML_BLAS_DEFAULT=ON \
     -DGGML_METAL=ON \
-    -DGGML_METAL_USE_BF16=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_OPENMP=OFF \
     -DLLAMA_OPENSSL=OFF \
+    -DLLAMA_SUBPROCESS=OFF \
     -S .
 cmake --build build-maccatalyst-x86_64 --config Release
 

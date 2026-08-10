@@ -161,6 +161,8 @@ src/clip.h
 src/clip-impl.h
 src/mtmd-helper.h
 src/mtmd-helper.cpp
+src/mtmd-helper-common.h
+src/mtmd-helper-gen.cpp
 src/mtmd.cpp
 src/mtmd.h
 src/mtmd-audio.cpp

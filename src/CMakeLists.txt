@@ -48,6 +48,9 @@ add_library(llama
             mtmd-audio.cpp
             mtmd-image.cpp
             mtmd-helper.cpp
+            # mtmd-helper split into a second TU in b10333 (PR #26254, Qwen3-TTS audio gen)
+            # wangqi modified 2026-08-10
+            mtmd-helper-gen.cpp
             ${LLAMA_CLIP_MODEL_SOURCES}
             )
 
