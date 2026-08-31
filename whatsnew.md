@@ -156,6 +156,23 @@ The default is `LLAMA_LAZY_MODE_AUTO`, which only engages for marked tensors **l
   `mtmd_gen_inp` gained `seed`, `temp`, `feats`, `n_feats`; `mtmd_gen_out` gained `feats`,
   `n_feats`, `is_eos`. Not used by the app (no TTS-through-mtmd path yet).
 
+### `tools/mtmd/mtmd-helper.h`
+
+- **Added**: `struct mtmd_helper_video_init_params` (`fps_target`, `ffmpeg_bin_dir`,
+  `timestamp_interval_ms`) and `struct mtmd_helper_init_opt` wrapping it, plus
+  `mtmd_helper_video_init_params_default()` and `mtmd_helper_init_opt_default()`.
+- **BREAKING**: `mtmd_helper_bitmap_init_from_file()` and `mtmd_helper_bitmap_init_from_buf()`
+  both gained a trailing `struct mtmd_helper_init_opt opt` parameter (#27520, the webp/ffmpeg
+  decode path). Every existing call site fails to compile until the new argument is supplied.
+  `LLaMa_MModal.createBitmapUsingHelperAPI()` passes `mtmd_helper_init_opt_default()` — our build
+  has `MTMD_VIDEO` off via `LLAMA_SUBPROCESS=OFF`, and that call site is image/audio only, so
+  none of the video fields apply.
+- **Behavioural**: bitmaps built by these helpers now carry a **SHA-256 hex string** as their id
+  instead of an FNV hash (#27274). Anything persisting or comparing bitmap ids across versions
+  sees different values.
+- **Unchanged**: `mtmd_helper_eval_chunks()` — verified by diff; the four call sites in
+  `LLaMa_MModal.swift` needed no edit.
+
 ### `tools/mtmd/clip.h`
 
 - **Added**: `clip_context_params.device`; `clip_encode_params` gained `out_feats`, `seed`,
