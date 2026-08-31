@@ -1,7 +1,7 @@
-# llama.cpp Upgrade: b10091 → b10333
+# llama.cpp Upgrade: b10333 → b10724
 
-**Date:** 2026-08-10
-**Commits in range:** 234 upstream commits merged (`tag-b10091..tag-b10333`, excluding merges)
+**Date:** 2026-08-31
+**Commits in range:** 391 upstream commits merged (`tag-b10333..tag-b10724`, excluding merges)
 
 ---
 
@@ -14,101 +14,100 @@ Five new `.cpp` files appeared in `tools/mtmd/models/` and are now copied by
 
 | File | PR | Architecture note |
 |------|-----|-------------------|
-| `minimax-m3.cpp` | #25113 | Vision tower for MiniMax-M3 (MSA sparse-attention backbone) |
-| `mimo-audio.cpp` | #26190 | MiMo-V2.5 audio input, RVQ (residual vector quantization) codec front-end |
-| `parakeet.cpp` | #22520 | Parakeet ASR encoder used by Nemotron 3 Nano Omni |
-| `qwen3tts-gen.cpp` | #26254 | Qwen3-TTS generation head (code → wav, `CLIP_MODALITY_GEN_AUDIO`) |
-| `qwen3tts-spkenc.cpp` | #26254 | Qwen3-TTS speaker encoder (voice conditioning) |
+| `dots3note.cpp` | #27524 | dots3-note vision **and** audio front-end (two graphs in one TU) |
+| `muse-glimmer.cpp` | #26841 | Muse Glimmer vision tower |
+| `pockettts-gen.cpp` | #26871 | Pocket-TTS generation head (`CLIP_MODALITY_GEN_AUDIO`), flow-matching decoder |
+| `pockettts-seanet.cpp` | #26871 | Pocket-TTS SEANet / Mimi decoder (continuous features → PCM) |
+| `pockettts-spkenc.cpp` | #26871 | Pocket-TTS speaker encoder (voice cloning conditioning) |
 
-Existing encoders also gained capability:
+Existing encoders and the image pipeline also changed:
 
-- **GLM-5.2-Vision** (#26126) — new projector wired through `glm4v.cpp`.
-- **MiniCPM-V 4.6 downsample** (#25993).
-- **DeepSeek-OCR multi-row batching** (#26154) — faster multi-tile OCR.
-- **Unlimited-OCR `max_tiles`** fix (#25614) — the converter now writes the real tile cap.
-- **`longest_edge` now honours min/max pixels** (#26638) — fixes over/under-sized image resizes.
-- **Lanczos resize method** added to the image pipeline (#26341).
-- **Empty-audio chunk fix for short inputs** (#26536).
-- **Qwen2.5-Omni mmproj conversion regression** fixed (#26262).
+- **Pillow-accurate resize for every model** (#27594) — `resize_algo` is now selected per
+  model instead of one global default, and the resampling matches PIL bit-for-bit. This
+  shifts OCR / vision preprocessing output slightly for *all* existing vision models.
+- **`mtmd_bitmap_set_mergeable`** (#27348) — `[QWEN_VIDEO]` temporal frame merging became
+  opt-in. See the MEDIUM risk item below; the Swift wrapper needed a fix.
+- **sha256 input hashing** (#27274) — `mtmd-helper.cpp` now includes `"hash/hash.h"` and
+  hashes media inputs with SHA-256 instead of the previous scheme. This pulls in the new
+  `vendor/hash/` sources; see the HIGH risk item below.
+- **DeepSeek-OCR SAM `ggml_conv_2d` keeps im2col in F32** (#26727) — accuracy fix for OCR.
+- **Granite 4 Vision image sequence assembly** fixed (#26653) and `preprocessor_granite`
+  hardened against malformed metadata (#27235).
+- **LFM2 image tiling threshold** fixed (#27057); thumbnails skipped for non-tiled LFM2
+  images (#27246).
+- **`--mmproj-device`** (#23255) — `mtmd_context_params` / `clip_context_params` gained a
+  `device` field so the projector can run on a different backend than the text model.
+- **webp decoding via ffmpeg** (#27520) and a moov-atom-at-end-of-file video fix (#27596).
+  Both live behind `MTMD_VIDEO`, which our build leaves OFF (`LLAMA_SUBPROCESS=OFF`), so
+  neither reaches the app.
+- **mmproj quantization restored** (#26818) — a new quant-only `LLM_ARCH_CLIP` stub
+  (`src/models/clip.cpp`) lets `llama-quantize` open mmproj GGUFs again.
 
 ### New Text Model Architectures
 
 **Edge column**: the app can only realistically run models at or below roughly 4B total
 parameters on device, since every weight has to be resident. For MoE models that means *total*
-params, not active params — a 30B-A3B model is only 3B active but still needs all 30B in memory.
-Sizes are the `LLM_TYPE` values declared in `src/models/<arch>.cpp`.
+params, not active params. Sizes are the `LLM_TYPE` values declared in `src/models/<arch>.cpp`.
 
 | Model | PR | Size (total / active) | Edge (<= 4B) | Notes |
 |-------|-----|----------------------|--------------|-------|
-| **Nanbeige4.2** | #25994 | **3B** | **YES** | Only edge-viable architecture in this range. Looped Transformer: reuses layers to add capacity without adding params, which is why `nanbeige.cpp` declares `LLM_TYPE_UNKNOWN` instead of a layer-count lookup. GGUF quants already published. |
-| MiniMax-M3 | #24908 | 428B-A23B | no | MSA (MiniMax Sparse Attention); MSA moved to its own memory impl in #26338 |
-| Laguna-S-2.1 | #26233 | 118B-A8B | no | New `LLM_TYPE` for the Poolside Laguna family (XS.2 is 30B-A3B, M.1 is 230B-A10B) |
-| GLM-5.2 Indexer | #25407 | 744B-A40B | no | Sparse-attention indexer tensors |
-| GLM-5.2 (GLM_DSA) NextN/MTP | #25980 | 744B-A40B | no | Multi-token-prediction draft head |
-| GLM-4.7-Flash MTP | #24868 | 30B-A3B | no | MTP support, built on the `deepseek2` arch path |
-| DeepSeek V4 MTP + DSpark | #25784 | frontier scale | no | Plus DSpark sidecar resolution (#26458) and separate-GGUF conversion (#26452) |
-| DeepSeek V3.2 MTP | #26457 | 685B-A37B | no | MTP support |
-| Qwen3-Next MTP | #25589 | 80B-A3B | no | MTP support |
-| DeepSeek V4 Flash 0731 chat template | #26398 | frontier scale | no | New Jinja template |
-| ExaoneMoeForCausalLM spelling | #26660 | 30B-A3B / 235B-A22B | no | Conversion now accepts the alternate arch name |
+| **Granite-SWA** | #25505 | **3B** | **YES** | `GraniteSWAForCausalLM` / `GraniteMoeSWAForCausalLM`, sliding-window attention |
+| **Granite-Switch** | #25107 | **3B** / 8B / 30B | **YES (3B)** | New switch-routing Granite family; the 3B is the edge-viable member |
+| **Pocket-TTS** | #26871 | **109M / 335M** | **YES** | Tiny TTS backbone; pairs with the three `pockettts-*` encoders above |
+| **Nanbeige 4.2 3B** | #27730 | **3B** | **YES** | Extends the b10333 Nanbeige 4.2 support down to the published 3B checkpoint |
+| BailingMoE3 | #26608 | 7.9B-A1.3B / 124B-A5.1B | no | Plus DSpark sidecar support (#27508) |
+| Muse Glimmer | #26841 | 30B | no | Tool-call detection after EOM fixed in #26879 |
+| Qwen3.8-Flash-Next (`qwen4exp`) | #27742 | A3B | no | Needs top-k radix select for k >= 1024 (#28032 / #28073) |
+| dots3-note | #27060 | 288B-A19B | no | Vision + audio via `dots3note.cpp` (#27524) |
+| Kimi-K3 | #26185 | 2.8T-A50B | no | Text model only |
+| MiniMax-01 / MiniMax-M1 | #27018 | 456B | no | `MiniMaxText01ForCausalLM`, `MiniMaxM1ForCausalLM` |
+| GLM-4.5-Air MTP | #26534 | 106B-A12B | no | Multi-token-prediction draft head |
+| Nemotron MTP / Nemotron 3.5 DSpark | #26725, #27804, #26905 | frontier scale | no | MTP + DSpark + DFlash paths |
+| LFM2 DSpark | #27383 | 350M-2.6B | (base yes) | DSpark sidecar for the already-supported LFM2 family |
 
-MTP tensors are now loaded lazily — `llama_model_params` gained `load_mtp`, and both
-`llama : load MTP tensors only if they are really used` (#26296) and
-`model : load MiMo V2 MTP tensors only if used` (#26412) avoid paying for draft weights that
-the app never uses. This is a memory win on device, since the app does not enable speculative
-decoding.
+### Lazy Tensor Reading
 
-### Metal / Apple Silicon
+`llama_model_params` gained `lazy_mode` (#27794, refined in #27837, CLI flag renamed to
+`--lazy-mode` in #27969). Rows of arch-marked tensors are read on demand instead of up front.
+The default is `LLAMA_LAZY_MODE_AUTO`, which only engages for marked tensors **larger than
+4 GiB** and requires mmap — no on-device model comes close, so this is inert for the app.
 
-- **NORM / RMS_NORM correctness fix** for row lengths that leave a partial simdgroup (#26708).
-  This is the most user-visible fix in the range — affected models produced subtly wrong
-  activations on rows whose length is not a multiple of the simdgroup width.
-- **Memory unwire fix** when a model is freed without ever running a GPU op (#26082). Directly
-  relevant to the app's load → evict path and to failed/aborted loads.
-- **DeepSeek V4 hyper-connections** implemented on Metal (#26459).
-- **DSv4 Lightning Indexer** Metal kernel (#25893), plus a follow-up that avoids `threadgroup`
-  matrix-array instantiation in that kernel (#26646) — reduces threadgroup memory pressure.
-- **F16 support for binary ops** (#26465), **`SILU_BACK`** (#25982), **f16 leaky-relu** (#25981),
-  **FWHT kernel** (#25924).
-- `GGML_METAL_USE_BF16` removed from all build scripts (#26604).
+### Metal
 
-### CPU / ARM64
+- **Per-op source split + parallel compile** (#26561) — the monolithic
+  `ggml/src/ggml-metal/ggml-metal.metal` was deleted and replaced by ~20 files under
+  `ggml/src/ggml-metal/kernels/`. `GGML_METAL_EMBED_LIBRARY=ON` handles the split upstream
+  (it emits one embedded metallib per kernel source), so our build script needs no change.
+- **Flash-attention vec tuning tables** landed for essentially every Apple GPU the app runs
+  on: M1 (#28078), M1 Max (#27932), M2 (#27940, #28017), M3 Pro (#27963), M3 Max / M5 /
+  M5 Pro (#27863), M3 Ultra (#27999), M4 (#27875), M4 Pro (#27824, #27915), plus the
+  per-device `(Q, NE)` selection mechanism itself (#26570). This is the single largest
+  user-visible speed change in the range for Apple Silicon.
+- **Quantized KV cache is dequantized to F16 before flash attention** (#27390), and only for
+  large batches (#27438) — fixes correctness with quantized KV plus FA.
+- **Memory leaks from missing autoreleasepools** fixed (#27758) — relevant on device, where
+  the app holds a context across many turns.
+- **Null-pipeline crash for F16 `src1` in `mul_mat` / `mul_mat_id`** fixed (#25648) and a
+  **null-check on buffer allocation to avoid an OOM crash** (#25371).
+- **Shared-memory padding assert** added (#27951); **K extent clamped** in the tensor-API
+  mat-mat kernel when K is not a multiple of 32 (#27450).
+- **TQ2_0 support** (#26980), **packed q8_0 dequant** (#27370), **top-k radix select**
+  (#28073), **chunked SSD MMA for Mamba-2 prefill** (#26647).
 
-- **aarch64 HWCAP fallbacks and fp16 variant detection fix** (#25554) — corrects feature probing
-  when the OS does not report the expected capability bits.
-- `ggml : adjust logic for offloading ops to weight's backend` (#25832).
-- `ggml: use dynamic allocation for split graph inputs` (#22789) — removes a fixed cap on graph
-  input count.
-- New `ggml_build_forward_order()` API (#26649) for building graph order without marking nodes
-  for compute.
+### Stability and Security
 
-### Quantization
-
-- **Rotated KV-cache quantization** support (#26180).
-- **DeepSeek V4 now enforces matching K and V cache types**, and enables flash attention when the
-  V cache is quantized (#25871).
-- Endianness conversion for Q1 and TQ2 during conversion (#26618).
-- `model-loader : fix quantized reshaped tensor strides` (#26672) and
-  `llama : allow reshape of tensors during load` (#26531).
-
-### Robustness / Security
-
-- `gguf-py`: validate `n_dims` and guard against uint64 overflow in the reader (#25401).
-- `vocab`: validate default special-token ids (#26506) and plamo2 byte tokens (#26511).
-- `common`: fix use-after-free when LoRA adapter loading fails (#25611).
-- `llama-context`: sync pending async copies before clearing `embd_seq` (#25676).
-- `gguf.cpp`: virtual destructor for `gguf_writer_base` (#25867).
-- `common : add subproc.h wrapper, disabled on android/ios` (#26102) — upstream explicitly keeps
-  subprocess spawning off for iOS; `LLAMA_SUBPROCESS_DEFAULT` is `OFF` when
-  `CMAKE_SYSTEM_NAME STREQUAL "iOS"`, so `MTMD_VIDEO` (ffmpeg) stays disabled in our build.
-
-### Chat / Jinja
-
-- Specialized **Qwen3 parser** (#26252) and **MiniMax-M3 parser** (#26210).
-- Tool calls inside thinking blocks enabled for DeepSeek V4 (#26269).
-- Cohere2 MoE template enforces the JSON schema for text responses when one is supplied (#26018).
-- Reasoning-budget sampler supports multiple end sequences (#25544).
-- `suppress_tokens` moved into `common/sampling` and exposed via the vocab API (#26276).
+- **GGUF loader hardened against malformed tensor dims and metadata types** (#25596).
+- **GGUF array type checked before reading** (#27075).
+- **LoRA tensor data bounds-checked against file size** (#27056).
+- **wavtokenizer-dec posnet/convnext `block_count` bounded against `n_layer_all`** (#26892).
+- **Integer tokenizer scores** now accepted by the vocab loader (#27260).
+- **Context-shift crash with an unquantized K cache** fixed — the Hadamard matrix is only
+  copied to `k_rot` when that tensor has a buffer assigned (#27967).
+- **Quadratic cost in Jinja `gather_string_parts`** fixed (#27034) — a real latency win on
+  long chat templates.
+- **Chat-template fixes**: Qwen3-coder workarounds scoped (#27679), bare-function parsing
+  tightened for Qwen (#26793), LFM2 tool-call arg-name ambiguity (#26960), Laguna-S-2.1
+  aligned to HuggingFace (#26232), `reasoning_effort` passed to templates.
 
 ---
 
@@ -116,160 +115,174 @@ decoding.
 
 ### `include/llama.h`
 
-- **Added**: `enum llama_load_mode` (`NONE` / `MMAP` / `MLOCK` / `MMAP_MLOCK` / `DIRECT_IO`) plus
-  `llama_load_mode_name()` and `llama_load_mode_from_str()`.
-- **Removed from `llama_model_params`**: `bool use_mmap`, `bool use_mlock`, `bool use_direct_io`.
-  Replaced by a single `enum llama_load_mode load_mode` field (PR #20834).
-- **Added to `llama_model_params`**: `bool load_mtp` — whether to load MTP (draft) layers.
-- **Changed**: `llama_sampler_init_penalties()` now takes `int32_t n_vocab` as its **first**
-  argument (PR #26520). `penalty_last_n == -1` no longer means "context size"; upstream clamps
-  negative values to `0`, which disables the sampler. `penalty_repeat` must be `> 0.0` and
-  `penalty_freq` / `penalty_present` must be finite — otherwise the call returns an inert
-  `"?penalties"` sampler instead of asserting.
-- **Changed**: `llama_sampler_init_dry()` dropped its `int32_t n_ctx_train` parameter.
-- **Added**: `llama_vocab_get_suppress_tokens()` — reads `tokenizer.ggml.suppress_tokens`.
+- **Added**: `enum llama_lazy_mode` (`OFF` / `AUTO` / `ON`) and `llama_model_params.lazy_mode`.
+  Default `AUTO`. Struct layout changed — anything constructing `llama_model_params` by
+  designated initializer rather than `llama_model_default_params()` must be revisited.
+  The Swift wrapper uses `llama_model_default_params()`, so it is unaffected.
+- **Added**: `LLAMA_LOAD_MODE_AUTO = -1` to `enum llama_load_mode`, and it is now the
+  effective default for CLI tools (#26081) — auto-detect, avoiding mmap on iGPUs.
+  `LLaMa.swift` always sets `load_mode` explicitly via `Self.loadMode(...)`, so the new
+  auto-detection never runs for us.
+- **Added**: `llama_context_params.n_outputs_max_per_seq` (0 = fall back to `n_outputs_max`).
+- **Added**: `llama_version()`.
+- **Added**: `llama_model_quantize_params.max_buf_size` (0 = default 8 GiB) — caps working
+  memory during quantization (#27795, #22877).
+- **Added**: `llama_sampler_copy(src, dst)`.
+- **Changed**: `llama_sampler_i.backend_init` now takes a third argument
+  `uint32_t n_outputs_max_per_seq`; `backend_reset` and `copy_state` were added to the vtable
+  (#25532, multi-output backend sampling). **Only affects code implementing a custom
+  `llama_sampler_i`.** The wrapper only calls the built-in `llama_sampler_init_*`
+  constructors, so nothing to do.
+- **Changed**: `llama_state_seq_load_file` now reports only the token count when `tokens_out`
+  is NULL.
 
 ### `ggml/include/ggml.h`
 
-- **Added**: `ggml_build_forward_order()` — adds a tensor and its parents to a graph without
-  marking them for compute.
-- RPC protocol version macros bumped (`RPC_PROTO_MAJOR_VERSION`, `RPC_PROTO_PATCH_VERSION`);
-  not used on Apple platforms.
-
-### `ggml/include/gguf.h`
-
-No changes.
+- **Added**: `GGML_GLU_OP_SWIGLU_CLAMP` and `ggml_swiglu_clamp()`.
+- **Added**: `ggml_rope_set_offset()` (+ Metal support, #27120) — used by mtmd (#27521).
+- **Changed**: `ggml_clamp()` is no longer in-place; `ggml_clamp_inplace()` is the new
+  in-place variant. Internal to ggml consumers; nothing in our code calls it.
+- **Changed**: the `A, B, C, ids` op now takes a trailing `int64_t K`.
+- **Version**: ggml `0.19.0` → `0.22.0`.
 
 ### `tools/mtmd/mtmd.h`
 
-- **Added**: `MTMD_INPUT_CHUNK_TYPE_COUNT` sentinel.
-- **Added**: `mtmd_input_chunk_save()` / `mtmd_input_chunk_load()` (#26645) — serialize chunk
-  *metadata* for KV save/load. Loaded chunks are placeholders and cannot be re-encoded.
-- **Added (experimental)**: audio-generation API — `mtmd_gen_audio_type`,
-  `mtmd_gen_audio_info`, `mtmd_gen_audio_get_info()`, `mtmd_gen_process_type`,
-  `mtmd_gen_inp` / `mtmd_gen_out`. Marked "subject to breaking changes" upstream.
-- Nothing was removed.
+- **Added**: `mtmd_context_params.device` (`ggml_backend_dev_t`) — new field in the middle of
+  the struct. Safe for us because `LLaMa_MModal.swift` builds params with
+  `mtmd_context_params_default()`.
+- **Added**: `mtmd_bitmap_set_mergeable(bitmap, bool)` — see the behavioural change below.
+- **Added**: `mtmd_input_chunk_get_placeholder()`, `mtmd_gen_inp_default()`.
+- **Added**: `MTMD_GEN_AUDIO_TYPE_POCKETTTS`; `mtmd_gen_audio_info.model_variant`;
+  `mtmd_gen_inp` gained `seed`, `temp`, `feats`, `n_feats`; `mtmd_gen_out` gained `feats`,
+  `n_feats`, `is_eos`. Not used by the app (no TTS-through-mtmd path yet).
 
 ### `tools/mtmd/clip.h`
 
-- **Added**: `CLIP_MODALITY_GEN_AUDIO` modality and `clip_init_result::ctx_gen_a`.
-- **Added**: `clip_encode_params` struct and `clip_encode()` covering both the classic image/audio
-  encode path and the new `GEN_CODE` / `GEN_WAV` audio-generation path.
+- **Added**: `clip_context_params.device`; `clip_encode_params` gained `out_feats`, `seed`,
+  `temp`, `out_is_eos`, `feats`.
 
-### `tools/mtmd/` file layout
+### New Internal Header
 
-- **New**: `mtmd-helper-common.h` — shared internal header (logger + `decode_embd_batch`).
-  `mtmd-helper.cpp` now `#include`s it, so it is **mandatory** to copy.
-- **New**: `mtmd-helper-gen.cpp` — carries the `mtmd_helper_gen_audio_*` symbols declared in
-  `mtmd-helper.h`. Nothing in the app calls them yet, but the framework should export what its
-  public header declares.
+`tools/mtmd/mtmd-internal.h` was split out of `mtmd.cpp` (#27348). `mtmd.cpp` includes it
+unconditionally, so it is mandatory for the xcframework build even though it adds no
+translation unit.
 
 ### State Save/Load Behavioral Changes
 
-None. No session/state version constant was bumped, and no field was added to or removed from
-the serialized context state in this range. **Existing session cache files remain valid** — no
-invalidation needed.
+- `LLAMA_SESSION_VERSION` 9 → 10
+- `LLAMA_STATE_SEQ_VERSION` 2 → 3
 
-`mtmd_input_chunk_save/load` is a *new, separate* facility for persisting multimodal chunk
-metadata alongside a KV dump; it does not change the existing `llama_state_*` format.
+Any existing `llama_state_save_file` output is now rejected on load. **No action needed**:
+`ModelAndContextParams.save_load_state` defaults to `false` and `ChatConfig.swift` keeps the
+assignment commented out, so the app has never written a session file.
 
 ---
 
 ## Risk Assessment
 
-### HIGH: `llama_model_params` load-flag removal breaks the Swift bridge
+### HIGH: `mtmd-helper.cpp` now needs the vendored hash sources — link failure without a fix
 
-**Problem:** `thirdparty/llamacpp_swift/Sources/swift/LLaMa.swift` set `model_params.use_mlock`,
-`use_mmap`, and `use_direct_io`. All three fields are gone in b10333, so the bridge no longer
-compiles.
+**Problem:** #27274 made `mtmd-helper.cpp` include `"hash/hash.h"` unconditionally. Upstream
+satisfies this with a new `vendor::hash` **static library** wired up by the new
+`vendor/CMakeLists.txt` (`add_subdirectory(vendor)` at the project root). Our xcframework
+build does not use that: `combine_static_libraries()` merges exactly
+`libllama.a`, `libggml.a`, `libggml-base.a`, `libggml-cpu.a`, `libggml-metal.a` and
+`libggml-blas.a`. A separately-built `libvendor-hash.a` would never reach the app, so the
+link would fail with an undefined `hash_sha256_hex` — or, worse, configure would fail first
+because `src/` has no `hash/` directory on the include path at all.
 
-**Required fix (applied):** added `LLaMa.loadMode(useMMap:useMlock:useDirectIO:)`, which maps the
-three `ModelAndContextParams` booleans onto `llama_load_mode`, with direct I/O taking precedence
-over mmap as the old `use_direct_io` documentation specified. The LoRA path (which previously
-forced `use_mmap = false`) now recomputes `load_mode` with mmap dropped, and the model-load
-exception context logs `llama_load_mode_name(...)` instead of `use_mmap`.
+**Fix applied:** mirror the existing `src/stb` / `src/miniaudio` pattern.
+`copy_mtmd_files()` now copies `vendor/hash/.` into `src/hash/` (dropping its
+`CMakeLists.txt`), and `src/CMakeLists.txt` compiles `hash/hash.cpp`,
+`hash/sha256/sha256.c`, `hash/sha1/sha1.c` and `hash/xxhash/xxhash.c` straight into the
+`llama` target. Two details matter:
 
-### HIGH: sampler signature changes break the Swift bridge
+- `sha1.h` wraps its API in `namespace vendor_hash`, so `sha1.c` only compiles as C++ —
+  `set_source_files_properties(hash/sha1/sha1.c PROPERTIES LANGUAGE CXX)`, matching
+  `vendor/hash/CMakeLists.txt`.
+- `sha256.c` includes `"rotate-bits/rotate-bits.h"` relative to the hash root, so
+  `target_include_directories(llama PRIVATE hash)` was added.
 
-**Problem:** `llama_sampler_init_penalties()` gained a leading `n_vocab` argument and
-`llama_sampler_init_dry()` lost `n_ctx_train`. Both are called from
-`thirdparty/llamacpp_swift/Sources/swift/GPT_SPM.swift`.
+`build-xcframework-ios.sh` also fails fast with an explicit message if `src/CMakeLists.txt`
+is missing the `hash/hash.cpp` entry, rather than dying deep inside the compile.
 
-**Required fix (applied):** `init_sampling` passes the already-computed `vocabCount` as the new
-first argument to `llama_sampler_init_penalties`, and the now-unused `ctxTrain` local was removed
-from the DRY call site.
+**Verified:** a native macOS configure + `cmake --build --target llama` completes; `nm` shows
+`hash_sha256_hex`, `sha256_hash`, `vendor_hash::SHA1Init` and the `XXH*` symbols all defined
+inside `libllama.a`, and the five new `clip_graph_*` vtables are present.
 
-### HIGH: `load_mode` removed the direct-I/O fallback, silently disabling mmap on Apple
+### HIGH: `mtmd-internal.h` must be copied or the build fails
 
-**Problem:** direct I/O is implemented only under `#ifdef __linux__` in `src/llama-mmap.cpp`.
-Before b10333 the loader probed `llama_file::has_direct_io()` and, when the platform could not
-honour the request, logged `"direct I/O is not available, using mmap"`, reopened the file with
-`std::fopen`, and cleared `use_direct_io`. On Apple the app's user-facing **Use Direct I/O**
-toggle was therefore a harmless no-op.
+**Problem:** `mtmd.cpp` includes `"mtmd-internal.h"` (#27348). The build script flattens the
+mtmd sources into `src/`, so the header has to be copied alongside them.
 
-The enum removed that probe. `llama-model-loader.cpp` now derives the flags unconditionally:
+**Fix applied:** `cp -fp "tools/mtmd/mtmd-internal.h" src/` in `copy_mtmd_files()`, with a
+matching `rm -f src/mtmd-internal.h` in the cleanup block and a `.gitignore` entry.
+
+### MEDIUM: video frame merging silently stopped working
+
+**Problem:** before b10724, `mtmd_bitmap::can_merge_with()` merged **any** two adjacent
+same-size image bitmaps:
 
 ```cpp
-this->use_mmap      = load_mode == LLAMA_LOAD_MODE_MMAP || load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK;
-this->use_direct_io = load_mode == LLAMA_LOAD_MODE_DIRECT_IO;
+return !is_audio && !other.is_audio && nx == other.nx && ny == other.ny;
 ```
 
-So `LLAMA_LOAD_MODE_DIRECT_IO` on iOS/macOS means **no mmap and no direct I/O** — the whole model
-is read through buffered stdio into anonymous memory. Higher peak RSS and a slower load, which
-directly conflicts with the single-local-model-in-memory constraint.
+#27348 added a `mergeable` flag defaulting to `false` and made it a precondition on both
+sides:
 
-**Required fix (applied):** `LLaMa.loadMode(...)` ignores `useDirectIO` under `#if canImport(Darwin)`
-and logs that it fell back, so the effective behaviour matches pre-b10333. The non-Darwin branch
-still honours the flag.
+```cpp
+return mergeable && other.mergeable && !is_audio && !other.is_audio && nx == other.nx && ny == other.ny;
+```
 
-**Follow-up (product decision, not applied):** the `use_direct_io` toggle in
-`ModelDetailLocalForSettingsView` and `helper/model_settings_*.json` has never done anything on
-Apple and now cannot. It should be removed, or replaced by a single load-mode picker that exposes
-the modes that do work here (mmap / mlock / both / none).
+`LLaMa_MModal.createBitmapsFromVideo()` decodes N evenly-sampled frames itself (our
+xcframework has no ffmpeg) and hands them to `mtmd_tokenize` relying on that automatic
+merge. After the upgrade the frames would be treated as N independent images: roughly double
+the vision tokens for a video on Qwen-VL-family models, and no temporal pairing.
 
-### MEDIUM: `penalty_last_n = -1` no longer means "context size"
+**Fix applied:** `createBitmapsFromVideo()` now calls `mtmd_bitmap_set_mergeable(bitmap, true)`
+on each frame. All frames come from one video through the same
+`AVAssetImageGenerator.maximumSize`, so they share identical `nx`/`ny` and merging is exactly
+the pre-b10724 behaviour. The stale comment in `make_media_embed()` was updated to match.
 
-**Problem:** the app's `repeat_last_n` flows through `ChatConfig` → `ModelItem` → `SpmSamplingParams.penaltyLastN`.
-Under the old API, `-1` requested a context-sized penalty window. Upstream now clamps negatives to
-`0`, which **disables** the penalties sampler entirely.
+Note the flip side is a genuine upstream fix: two *unrelated* same-size still images passed
+together used to be merged as if they were video frames. They no longer are.
 
-**Mitigation:** all 46 entries in `helper/models_test.json` and all 41 in `helper/models_audit.json`
-use non-negative `repeat_last_n` (defaults are 512 in `ChatConfig` and 64 in
-`ModelSettingsTemplate`), so no shipped configuration is affected. A user who manually typed `-1`
-into model settings would silently lose repetition penalty rather than crash — upstream returns an
-inert sampler, it does not assert.
+### MEDIUM: vision preprocessing output shifts for every model
 
-### MEDIUM: `mtmd-helper` split into two translation units
+**Problem:** #27594 switched image resizing to a Pillow-accurate implementation and corrected
+`resize_algo` per model. Vision and OCR output will differ slightly from b10333 for the same
+input, even on unchanged models.
 
-**Problem:** `mtmd-helper.cpp` now includes `mtmd-helper-common.h`. Copying only the previously
-known mtmd files leaves the build with a missing header.
+**Mitigation:** no code change is possible or wanted — upstream is now matching the reference
+Python preprocessing, which should be a net accuracy win. Worth a spot-check of Doc Scanner
+output on a couple of known pages after the xcframework is rebuilt.
 
-**Mitigation (applied):** `copy_mtmd_files()` copies `mtmd-helper-common.h` and
-`mtmd-helper-gen.cpp`; `src/CMakeLists.txt` lists `mtmd-helper-gen.cpp`, with a grep-guarded sed
-fallback in the build script for checkouts where that file has not been updated.
+### LOW: Metal kernel sources split into ~20 files
 
-### LOW: `GGML_METAL_USE_BF16` was already a dead CMake variable
+`ggml-metal.metal` was deleted in favour of `ggml/src/ggml-metal/kernels/*.metal` (#26561).
+`GGML_METAL_EMBED_LIBRARY=ON` handles this upstream and the build script never referenced the
+old path. Expect a different (parallel, generally faster) shader compile step.
 
-The ggml-metal option had been removed upstream before b10091; our script kept passing it, which
-only produced a "manually-specified variables were not used" warning. #26604 removed it from
-upstream's build scripts, and it is now removed from ours in three places.
+### LOW: session / state file version bump
 
-### LOW: new `load_mtp` model param defaults to the previous behaviour
+`LLAMA_SESSION_VERSION` 9 → 10 and `LLAMA_STATE_SEQ_VERSION` 2 → 3. The app never writes
+session files (`save_load_state` is `false` everywhere), so there is nothing to invalidate.
 
-`llama_model_default_params()` sets it; the bridge does not touch it. Lazy MTP loading only
-reduces memory for architectures that ship draft heads.
+### LOW: `llama_load_mode` auto default
 
-### LOW: experimental mtmd audio-generation API
+`LLAMA_LOAD_MODE_AUTO` became the default for upstream tools. `LLaMa.swift` always sets
+`load_mode` explicitly from the app's mmap / mlock / direct-I/O preferences, so behaviour is
+unchanged.
 
-`clip_encode()`, `mtmd_gen_*`, and the two Qwen3-TTS encoders are additive. Nothing in the app
-calls them. Upstream flags the API as subject to breaking changes, so do not build on it yet.
+### LOW: `lazy_mode` defaults to AUTO
 
-### LOW: `MTMD_VIDEO` / subprocess
+Only engages for arch-marked tensors over 4 GiB and requires mmap. Inert on device.
 
-Upstream added an ffmpeg-backed video path guarded by `MTMD_VIDEO`, which itself requires
-`LLAMA_SUBPROCESS`. `CMakeLists.txt` forces `LLAMA_SUBPROCESS_DEFAULT=OFF` for
-`CMAKE_SYSTEM_NAME STREQUAL "iOS"`, and the `#ifdef MTMD_VIDEO` guards in `mtmd-helper.cpp` mean
-`sheredom/subprocess.h` is never included in our build. No action required.
+### LOW: root CMake now defines `LLAMA_VERSION_BASE` / `LLAMA_VERSION_MAJOR`
+
+`LLAMA_INSTALL_VERSION` was replaced by an explicit `LLAMA_VERSION*` block at the project
+root. `src/CMakeLists.txt` reads `LLAMA_VERSION_BASE` / `LLAMA_VERSION_MAJOR`, both of which
+the new block defines. Configure succeeds (verified: `llama.cpp version: 0.3.0-dev`).
 
 ---
 
@@ -277,29 +290,28 @@ Upstream added an ffmpeg-backed video path guarded by `MTMD_VIDEO`, which itself
 
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
-| Platforms | iOS, macOS, visionOS, tvOS | iOS device, iOS simulator, macOS, Mac Catalyst |
-| mtmd/clip sources | built as a separate `mtmd` target | copied into `src/` and linked into `libllama` |
-| Vision encoders | `tools/mtmd/models/*.cpp` in the mtmd target | copied to `src/clip-models/`, picked up by `file(GLOB)` |
-| `LLAMA_OPENSSL` | default | forced `OFF` |
-| `LLAMA_BUILD_APP` | default `ON` | forced `OFF` (needs `build-info.h`) |
-| `GGML_METAL_USE_BF16` | removed in #26604 | removed here too |
+| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
+| mtmd sources | built as a separate `mtmd` library from `tools/mtmd/` | copied into `src/` and compiled into `libllama` |
+| Vendored deps | `vendor::hash` / `vendor::stb` / `vendor::miniaudio` targets | copies into `src/hash`, `src/stb`, `src/miniaudio` |
+| `LLAMA_SUBPROCESS` | ON | **OFF** (Catalyst SDK marks `posix_spawn_file_actions_addchdir_np` unavailable; also keeps `MTMD_VIDEO`/ffmpeg off) |
+| Framework assembly | CMake install | manual `libtool` merge of 6 named `.a` files |
 
-**No structural changes** beyond the file-copy additions listed above.
+**Structural changes needed this cycle:** the vendored-hash copy and `mtmd-internal.h` copy
+described above, plus the five new encoders. Everything else was absorbed without change.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED (done)**: copy the five new encoders, `mtmd-helper-common.h`, and
-   `mtmd-helper-gen.cpp` in `copy_mtmd_files()`; add `mtmd-helper-gen.cpp` to `src/CMakeLists.txt`.
-2. **REQUIRED (done)**: port `LLaMa.swift` to `llama_load_mode` and fix the two sampler call sites
-   in `GPT_SPM.swift`.
-3. **REQUIRED**: clean rebuild — `rm -rf build-apple build-ios-sim build-ios-device build-macos`
-   then `./build-xcframework-ios.sh`. The stale-copy wipe at the top of `copy_mtmd_files()` handles
-   `src/`, but the CMake caches still hold the removed `GGML_METAL_USE_BF16` entry.
-4. **NOT required**: session cache invalidation. No state format change in this range.
-5. **Recommended**: after rebuilding, verify the new encoders linked —
-   `nm -gU build-apple/llama.xcframework/ios-arm64/llama.framework/llama | grep -i "minimax\|parakeet\|qwen3tts"`.
-6. **Recommended**: smoke-test a GGUF with an odd hidden size to exercise the Metal RMS_NORM
-   partial-simdgroup fix (#26708), and load/evict a model without generating to exercise the
-   Metal memory-unwire fix (#26082).
+1. **DONE (required)**: copy `vendor/hash/` into `src/hash/` and compile it into the `llama`
+   target — without this the build does not link.
+2. **DONE (required)**: copy `tools/mtmd/mtmd-internal.h` into `src/`.
+3. **DONE (required)**: copy the five new encoders into `src/clip-models/`.
+4. **DONE (required)**: call `mtmd_bitmap_set_mergeable(true)` on video frames in
+   `LLaMa_MModal.createBitmapsFromVideo()` to restore temporal merging.
+5. **TODO**: rebuild the xcframework (`./build-xcframework-ios.sh`) and confirm the iOS
+   device / simulator / macOS / Catalyst slices all link.
+6. **Recommended**: spot-check Doc Scanner OCR output against a known page — image resizing
+   changed for every vision model (#27594).
+7. **Recommended**: spot-check a video prompt on a Qwen-VL-family model to confirm frame
+   merging is back (the debug log line is `merging 2 frames at part index ...`).

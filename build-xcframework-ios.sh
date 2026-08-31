@@ -76,9 +76,23 @@ copy_mtmd_files() {
     rm -f src/mtmd-helper.cpp src/mtmd-helper.h src/mtmd-image.cpp src/mtmd-image.h
     # wangqi 2026-08-10: mtmd-helper was split in b10333 (PR #26254, Qwen3-TTS)
     rm -f src/mtmd-helper-common.h src/mtmd-helper-gen.cpp
+    # wangqi 2026-08-31: mtmd-internal.h added in b10724 (PR #27348, mergeable bitmaps)
+    rm -f src/mtmd-internal.h
     rm -rf src/debug
+    # wangqi 2026-08-31: vendored hash sources added in b10724 (PR #27274, sha256 input
+    # hashing). Wipe before re-copying so a stale copy cannot shadow the new one.
+    rm -rf src/hash
 
     cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
+    # wangqi 2026-08-31: b10724 made mtmd-helper.cpp include "hash/hash.h" for sha256 input
+    # hashing (PR #27274). Upstream satisfies that with the new vendor::hash static library,
+    # but combine_static_libraries() below only merges libllama/libggml*, so a separate
+    # libvendor-hash.a would never reach the app and hash_sha256_hex would fail to link.
+    # Mirror the existing src/stb and src/miniaudio pattern instead: copy the sources into
+    # src/hash/ and compile them straight into the llama target (see src/CMakeLists.txt).
+    mkdir -p src/hash
+    cp -Rp vendor/hash/. src/hash/
+    rm -f src/hash/CMakeLists.txt
     # Core CLIP files
     cp -fp "tools/mtmd/clip.h" src/
     cp -fp "tools/mtmd/clip-impl.h" src/
@@ -99,6 +113,10 @@ copy_mtmd_files() {
     # mtmd_helper_gen_audio_* symbols declared in mtmd-helper.h.
     cp -fp "tools/mtmd/mtmd-helper-common.h" src/
     cp -fp "tools/mtmd/mtmd-helper-gen.cpp" src/
+    # wangqi 2026-08-31: b10724 moved the mtmd-internal structs out of mtmd.cpp into their
+    # own header (PR #27348, mtmd_bitmap_set_mergeable). mtmd.cpp includes it unconditionally,
+    # so the header is mandatory even though it contributes no translation unit.
+    cp -fp "tools/mtmd/mtmd-internal.h" src/
     # wangqi 2026-03-28: mtmd.cpp now includes "mtmd-image.h" (added in b8565)
     cp -fp "tools/mtmd/mtmd-image.h" src/
     cp -fp "tools/mtmd/mtmd-image.cpp" src/
@@ -168,6 +186,14 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/parakeet.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/qwen3tts-gen.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/qwen3tts-spkenc.cpp" src/clip-models/
+    # wangqi 2026-08-31: Added new encoders from b10724 upgrade
+    # dots3-note vision + audio (PR #27524), Muse Glimmer vision (PR #26841),
+    # Pocket-TTS generation head / SEANet decoder / speaker encoder (PR #26871)
+    cp -fp "tools/mtmd/models/dots3note.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/muse-glimmer.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/pockettts-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/pockettts-seanet.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/pockettts-spkenc.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
@@ -188,6 +214,15 @@ copy_mtmd_files() {
         sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
             mtmd-helper-gen.cpp|' src/CMakeLists.txt
         echo "Patched src/CMakeLists.txt to include mtmd-helper-gen.cpp"
+    fi
+    # wangqi 2026-08-31: hash/*.c(pp) added in b10724 — guard kept for safety on checkouts
+    # where src/CMakeLists.txt has not been updated yet. sha1.c must be compiled as C++
+    # because sha1.h wraps the API in namespace vendor_hash.
+    if ! grep -q "hash/hash.cpp" src/CMakeLists.txt; then
+        echo "ERROR: src/CMakeLists.txt is missing the hash/ sources required by mtmd-helper.cpp" >&2
+        echo "       Add hash/hash.cpp, hash/sha256/sha256.c, hash/sha1/sha1.c and" >&2
+        echo "       hash/xxhash/xxhash.c to the llama target before building." >&2
+        exit 1
     fi
 }
 echo "copy mtmd and clip from tools/mtmd/ to src"
