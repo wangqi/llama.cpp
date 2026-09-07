@@ -2451,8 +2451,16 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
     const int * toktypes = nullptr;
     const int toktype_idx = gguf_find_key(ctx, kv(LLM_KV_TOKENIZER_TOKEN_TYPE).c_str());
     if (toktype_idx != -1) {
-        if (gguf_get_kv_type(ctx, toktype_idx) != GGUF_TYPE_ARRAY ||
-            gguf_get_arr_type(ctx, toktype_idx) != GGUF_TYPE_INT32) {
+        // Accept UINT32 as well as INT32: some GGUF writers emit the token-type enum
+        // unsigned, and the two encodings are byte-identical for every valid token type
+        // (0..6), so reading them through `const int *` below is exact. This mirrors how
+        // scores accept INT32/FLOAT32 and llama_model_loader::get_arr accepts either.
+        // wangqi modified 2026-09-07
+        const gguf_type toktype_kv_type  = gguf_get_kv_type(ctx, toktype_idx);
+        const gguf_type toktype_arr_type = toktype_kv_type == GGUF_TYPE_ARRAY
+            ? gguf_get_arr_type(ctx, toktype_idx) : GGUF_TYPE_COUNT;
+        if (toktype_arr_type != GGUF_TYPE_INT32 &&
+            toktype_arr_type != GGUF_TYPE_UINT32) {
             throw std::runtime_error(format("invalid gguf type for %s", kv(LLM_KV_TOKENIZER_TOKEN_TYPE).c_str()));
         }
         const uint32_t n_toktypes = gguf_get_arr_n(ctx, toktype_idx);
