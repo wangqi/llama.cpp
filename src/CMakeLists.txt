@@ -9,40 +9,44 @@ llama_add_compile_flags()
 file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")
 file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")
 
+set(LLAMA_CORE_SOURCES
+    llama.cpp
+    llama-adapter.cpp
+    llama-arch.cpp
+    llama-batch.cpp
+    llama-chat.cpp
+    llama-context.cpp
+    llama-cparams.cpp
+    llama-grammar.cpp
+    llama-graph.cpp
+    llama-hparams.cpp
+    llama-impl.cpp
+    llama-io.cpp
+    llama-kv-cache.cpp
+    llama-kv-cache-iswa.cpp
+    llama-kv-cache-dsa.cpp
+    llama-kv-cache-dsa-iswa.cpp
+    llama-kv-cache-msa.cpp
+    llama-kv-cache-dsv4.cpp
+    llama-memory.cpp
+    llama-memory-hybrid.cpp
+    llama-memory-hybrid-iswa.cpp
+    llama-memory-hybrid-idx.cpp
+    llama-memory-recurrent.cpp
+    llama-mmap.cpp
+    llama-model-loader.cpp
+    llama-model-saver.cpp
+    llama-model.cpp
+    llama-quant.cpp
+    llama-sampler.cpp
+    llama-vocab.cpp
+    unicode-data.cpp
+    unicode.cpp
+)
+
 add_library(llama
             ../include/llama.h
-            llama.cpp
-            llama-adapter.cpp
-            llama-arch.cpp
-            llama-batch.cpp
-            llama-chat.cpp
-            llama-context.cpp
-            llama-cparams.cpp
-            llama-grammar.cpp
-            llama-graph.cpp
-            llama-hparams.cpp
-            llama-impl.cpp
-            llama-io.cpp
-            llama-kv-cache.cpp
-            llama-kv-cache-iswa.cpp
-            llama-kv-cache-dsa.cpp
-            llama-kv-cache-dsa-iswa.cpp
-            llama-kv-cache-msa.cpp
-            llama-kv-cache-dsv4.cpp
-            llama-memory.cpp
-            llama-memory-hybrid.cpp
-            llama-memory-hybrid-iswa.cpp
-            llama-memory-hybrid-idx.cpp
-            llama-memory-recurrent.cpp
-            llama-mmap.cpp
-            llama-model-loader.cpp
-            llama-model-saver.cpp
-            llama-model.cpp
-            llama-quant.cpp
-            llama-sampler.cpp
-            llama-vocab.cpp
-            unicode-data.cpp
-            unicode.cpp
+            ${LLAMA_CORE_SOURCES}
             unicode.h
             ${LLAMA_MODELS_SOURCES}
             clip.cpp
@@ -73,14 +77,37 @@ set_target_properties(llama PROPERTIES
     VERSION ${LLAMA_VERSION_BASE}
     SOVERSION ${LLAMA_VERSION_MAJOR}
     MACHO_CURRENT_VERSION 0 # keep macOS linker from seeing oversized version number
+    UNITY_BUILD ON
+    UNITY_BUILD_BATCH_SIZE 16
 )
 
-target_compile_definitions(llama PRIVATE
-    LLAMA_VERSION="${LLAMA_VERSION}"
-    LLAMA_COMMIT="${LLAMA_BUILD_COMMIT}"
-)
+# exclude non-model sources from unity build
+set_source_files_properties(${LLAMA_CORE_SOURCES} ../include/llama.h unicode.h
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
-target_include_directories(llama PRIVATE .)
+# Upstream turned UNITY_BUILD on for the llama target in b10809 (PR #28091) and excluded only
+# LLAMA_CORE_SOURCES. The mtmd/clip/hash sources above live in upstream's separate `mtmd` target,
+# which is NOT unity-built, so nothing upstream ever compiles them concatenated: mtmd-helper.cpp
+# defines MINIAUDIO_IMPLEMENTATION and STB_IMAGE_IMPLEMENTATION, and several clip-models files use
+# file-local statics. Keep every source this fork adds out of the unity batches.
+# wangqi modified 2026-09-18
+set_source_files_properties(
+    clip.cpp
+    mtmd.cpp
+    mtmd-audio.cpp
+    mtmd-image.cpp
+    mtmd-helper.cpp
+    mtmd-helper-gen.cpp
+    hash/hash.cpp
+    hash/sha256/sha256.c
+    hash/sha1/sha1.c
+    hash/xxhash/xxhash.c
+    ${LLAMA_CLIP_MODEL_SOURCES}
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+configure_file(llama-version.h.in ${CMAKE_CURRENT_BINARY_DIR}/llama-version.h @ONLY)
+
+target_include_directories(llama PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
 # sha256.c includes "rotate-bits/rotate-bits.h" relative to the hash root.
 # wangqi modified 2026-08-31
 target_include_directories(llama PRIVATE hash)

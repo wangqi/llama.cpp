@@ -194,6 +194,10 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/pockettts-gen.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/pockettts-seanet.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/pockettts-spkenc.cpp" src/clip-models/
+    # wangqi 2026-09-18: Added new vision encoder from the b11035 upgrade
+    # DeepSeek-V4-Flash-Vision-Exp (PR #28133); clip.cpp constructs clip_graph_deepseek4v,
+    # so omitting it is an undefined-symbol link error rather than a silent capability loss.
+    cp -fp "tools/mtmd/models/deepseek4v.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
