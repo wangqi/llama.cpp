@@ -1004,6 +1004,9 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q2_0> {
     static constexpr int bs = sizeof(block_q2_0);
 };
 
+// Conflict resolution: upstream added `bs` to the pre-existing Q2_0 traits above while the
+// PrismML pick appended these PQ2_0 traits; kept both rather than letting the rename-shaped
+// conflict drop upstream's field. CUDA is not built for our targets. // wangqi modified 2026-09-18
 template<>
 struct ggml_cuda_type_traits<GGML_TYPE_PQ2_0> {
     static constexpr int qk = QK_PQ2_0;

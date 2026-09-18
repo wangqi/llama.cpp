@@ -726,6 +726,10 @@ static __global__ void mul_mat_vec_q(
         }
 #endif
 
+// Conflict resolution: kept upstream's DGX-Spark prefetch block above and the PrismML PTQ1_0
+// branch below. The pick's diff also carried upstream's generic `for (j...)` loop opener, which
+// it re-provides in its own `} else { ... }` arm, so that duplicate opener was dropped.
+// CUDA is not built for our targets. // wangqi modified 2026-09-18
 #if !defined(GGML_USE_HIP)
         if constexpr (type == GGML_TYPE_PTQ1_0 && ncols_dst > 1 && ncols_dst <= 3) {
 #    pragma unroll

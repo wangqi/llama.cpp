@@ -372,6 +372,8 @@ private:
     llm_graph_result_ptr gf_res_reserve;
 
     llm_graph_result * gf_res_prev_active = nullptr;
+    // Conflict resolution: upstream added gf_res_prev_active and the PrismML Hadamard pick
+    // added hadamard_verified at the same spot; both are needed. // wangqi modified 2026-09-18
     // one-time Hadamard transform-coverage check on the first built graph
     bool hadamard_verified = false;
 
