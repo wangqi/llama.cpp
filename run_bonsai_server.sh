@@ -29,7 +29,8 @@ SERVER_BIN="$BUILD_DIR/bin/llama-server"
 
 # ---- defaults ---------------------------------------------------------------
 
-MODEL="${BONSAI_MODEL:-/Volumes/ssd2t/models/Ternary-Bonsai-2-27B-PQ2_0.gguf}"
+#MODEL="${BONSAI_MODEL:-/Volumes/ssd2t/models/Ternary-Bonsai-2-27B-PQ2_0.gguf}"
+MODEL="${BONSAI_MODEL:-/Volumes/ssd2t/models/Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
 
 # The model's own default n_ctx is 262144. Serving at that width tries to allocate a
 # ~24 GB shape (measured) and will thrash or die on most machines, so we ALWAYS pass -c
