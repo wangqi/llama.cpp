@@ -93,7 +93,8 @@ if [ ! -f "$MODEL" ]; then
 fi
 
 case "$MODEL" in
-    *PTQ1_0*) echo "note: PTQ1_0 support is carried but has never been exercised end to end." ;;
+    # PTQ1_0 now verified end to end, so the warning is informational // wangqi modified 2026-09-23
+    *PTQ1_0*) echo "note: PTQ1_0 (ternary, 5.95 GB) verified 2026-09-23: ~6.8 GB RSS at 8K/q8_0 on an M4 Pro." ;;
 esac
 
 # ---- build llama-server if missing or older than the submodule HEAD ----------

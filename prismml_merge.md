@@ -231,13 +231,14 @@ context explicitly will try to allocate a ~24 GB shape.
 
 ---
 
-## 8. Known gaps (as of 2026-09-18)
+## 8. Known gaps (as of 2026-09-23)
 
-- **`PTQ1_0` has never been run.** Its type, CPU path and Metal kernels are all carried, but the
-  5.95 GB file would not finish downloading, so nothing has exercised it end to end. Treat it as
-  untested until someone loads
-  `prism-ml/Ternary-Bonsai-2-27B-gguf : Ternary-Bonsai-2-27B-PTQ1_0.gguf`.
-  (HuggingFace Xet misbehaved badly on that file — 12 GB transferred, zero completed transmissions;
+<!-- PTQ1_0 has now been run end to end, so the "never run" gap is closed // wangqi modified 2026-09-23 -->
+- **`PTQ1_0` runs (closed 2026-09-23).** Loaded with `llama-server -c 8192 -ctk q8_0 -ctv q8_0
+  -ngl 99` on an M4 Pro: correct greedy output, 53.9 tok/s prefill, 17.9 tok/s decode, 6.79 GB RSS
+  after one request. Also run on device by the developer. Full record in
+  `helper/docs/llama_cpp_prism.md`. (Download note kept for the next fetch: HuggingFace Xet
+  misbehaved badly on that file — 12 GB transferred, zero completed transmissions;
   `HF_HUB_DISABLE_XET=1` or plain `curl -C -` are the fallbacks.)
 - **No catalogue row and no RAM gate.** `Ternary-Bonsai-2-27B` is not in `models_*.json`, and the
   llama path has no memory preflight at all. A 7.2 GB model needs one before it can ship to users;
