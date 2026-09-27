@@ -121,6 +121,10 @@
 #define FC_SUM_ROWS                    1400
 #define FC_UPSCALE                     1500
 #define FC_GATED_DELTA_NET             1600
+#define FC_NORM                        1700
+#define FC_TOPK_MOE                    1800
+#define FC_MOE_REDUCE                  1900
+#define FC_DSV4_HC                     2000
 
 // op-specific constants
 #define OP_FLASH_ATTN_EXT_NQPSG 8
@@ -627,6 +631,7 @@ typedef struct {
     uint64_t nbf1[3];
     uint64_t nbf2[3];
     uint64_t nbf3[3];
+    float    scale;
 } ggml_metal_kargs_norm;
 
 typedef struct {
@@ -915,7 +920,6 @@ typedef struct {
     uint64_t nb00;
     uint64_t nb01;
     uint64_t nb02;
-    int64_t  ne10;
     int64_t  ne11;
     uint64_t nb10;
     uint64_t nb11;
@@ -1225,11 +1229,6 @@ typedef struct {
     int32_t  len;
 } ggml_metal_kargs_argsort_merge;
 
-// Block widths at or above this run the threadgroup-staged FWHT kernel: the
-// register-resident one keeps N/32 values per thread, which stops fitting here.
-#define GGML_METAL_FWHT_TG_MIN_N 512
-#define GGML_METAL_FWHT_TG_NT    256
-
 typedef struct {
     int32_t  ne00;   // number of columns (elements per row)
     int32_t  ne01;   // rows
@@ -1240,6 +1239,24 @@ typedef struct {
     uint64_t nb03;
     int32_t  top_k;  // k
 } ggml_metal_kargs_top_k;
+
+// widths at or above this use the threadgroup FWHT kernel, one row per threadgroup
+// with GGML_METAL_FWHT_TG_NT threads, instead of one row per simdgroup
+#define GGML_METAL_FWHT_TG_MIN_N 1024
+#define GGML_METAL_FWHT_TG_NT    256
+
+typedef struct {
+    int32_t  ne01;      // n_tokens
+    uint64_t nb01;      // logits row stride
+    uint64_t nb1_ids;   // ids row stride
+    float    clamp;
+    float    scale;
+} ggml_metal_kargs_topk_moe;
+
+typedef struct {
+    int32_t ne00; // n_embd
+    int32_t ne02; // n_tokens
+} ggml_metal_kargs_moe_reduce;
 
 typedef struct {
     int32_t nrows;
@@ -1293,8 +1310,10 @@ typedef struct {
     uint64_t nb_x2;
     uint64_t nb_w0;
     uint64_t nb_w1;
+    uint64_t nb_w2;
     uint64_t nb_d0;
     uint64_t nb_d1;
+    float    scale;
 } ggml_metal_kargs_dsv4_hc_pre;
 
 typedef struct {

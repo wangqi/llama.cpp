@@ -133,6 +133,33 @@ on-topic-looking nonsense, not an error, and no test that only checks exit codes
 marked `// wangqi modified 2026-09-18` and says so in-source. That also matches PrismML's intent —
 their guard only ever applied to `MUL_MAT`.
 
+**Retired in the b11222 merge (2026-09-27).** Upstream adopted the F16-input and wide-width FWHT
+work itself (#29094, #29095) and now asks one predicate, `ggml_metal_op_mul_mat_use_fwht()` in
+`ggml-metal-common.cpp`, from both `supports_op` and the dispatch. Our guard was dropped in favour
+of it. That is safe because the fold's rotation is a materialised F32 Hadamard matrix
+(`llama-model.cpp`, `prism.hadamard.<n>`), so any width the FWHT kernel declines still multiplies by
+the real rotation on the generic path or the CPU. If this hunk conflicts again, take upstream.
+
+### The b11222 merge (2026-09-27): upstream now owns the FWHT kernels
+
+Twelve files conflicted, almost all because upstream landed its own version of FWHT code we carry.
+Resolutions, with the one that git did **not** flag first:
+
+| File | Resolution |
+|---|---|
+| `ggml/src/ggml-metal/ggml-metal-impl.h` | **Auto-merged with `GGML_METAL_FWHT_TG_MIN_N` defined twice** (ours 512 from PrismML #161, upstream 1024). A redefinition is only a warning; the last one wins. Keeping our `misc.metal` instantiations with upstream's threshold would dispatch the 256-thread threadgroup kernel as a 64-thread simdgroup kernel: wrong output, no error. We took upstream (1024) and deleted ours. After any merge, check each `#define` in this file appears once. |
+| `ggml-metal-device.{m,h,cpp}`, `kernels/misc.metal`, the FWHT hunks of `ggml-metal-ops.cpp` | Take upstream. `misc.metal`'s hunk also carries upstream's `FC_dsv4_hc_n_hc` constant, which must survive. Cost: PrismML #161's +3.6% decode at block width 512 (1024 and above use the threadgroup kernel either way). |
+| `ggml-metal-ops.cpp`, flash-attention hunk | Upstream replaced `FATTN_SMEM` with an `fa_smem` lambda and still does not cap `nsg`. Our 2026-05-14 iPhone crash fix was re-applied on the lambda. |
+| `ggml-cpu/ggml-cpu.c` | Take upstream; same F16-src1 assertion, different wording. |
+| `src/llama-context.cpp`, `src/llama-graph.cpp` | Keep both. `graph_params` is positional aggregate init: `hadamard_rotations`, `hadamard_inverses`, then upstream's `prec_policy`, matching `llm_graph_params` in `llama-graph.h`. |
+| `conversion/base.py` | Keep both (`add_hadamard_metadata()` and upstream's `prec_a4` block). |
+| `ggml-cuda/fwht.cu`, `ggml-cuda.cu` | Not built. Keep our `fwht.cu` (the sign-fused dispatch `ggml-cuda.cu` calls) and add upstream's `ggml_cuda_op_mul_mat_use_fwht()`; take upstream in `ggml-cuda.cu`. |
+| `tests/test-backend-ops.cpp` | Keep both, close `test_fwht_signed`'s body, de-duplicate the FWHT case list. |
+
+Verification that caught nothing wrong and is worth repeating: build `test-backend-ops` on the Mac
+and run `-o MUL_MAT_HADAMARD -b MTL0` (37/37), `-o MUL_MAT|MUL_MAT_ID|GET_ROWS|CPY -p 'pq2_0|ptq1_0'`
+(266/266) and `-o FLASH_ATTN_EXT -b MTL0` (4954/4954).
+
 ### Vulkan is declined on purpose
 
 `ggml-vulkan.cpp` and the Vulkan shaders conflicted heavily. We build no Vulkan backend for any

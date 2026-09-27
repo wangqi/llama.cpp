@@ -1,4 +1,5 @@
 #include "common.cuh"
+#include "convert.cuh"
 #include "fwht.cuh"
 
 template <typename T>
@@ -137,6 +138,18 @@ static bool fwht_dispatch(ggml_backend_cuda_context & ctx, const ggml_tensor * s
         return fwht_launch<float>(ctx, (const float *) src->data, dst_d, n, rows, scale, signs, n_blk);
     }
     return fwht_launch<half>(ctx, (const half *) src->data, dst_d, n, rows, scale, signs, n_blk);
+}
+
+// Upstream's predicate (#29096), kept beside the fork's sign-fused dispatch, which the merge
+// kept because ggml-cuda.cu's Hadamard fusion calls ggml_cuda_op_fwht_signed. // wangqi modified 2026-09-27
+bool ggml_cuda_op_mul_mat_use_fwht(const struct ggml_tensor * op) {
+    const struct ggml_tensor * a = op->src[0];
+    const struct ggml_tensor * b = op->src[1];
+
+    return op->op == GGML_OP_MUL_MAT && ggml_get_op_params_i32(op, 1) == GGML_HINT_SRC0_IS_HADAMARD &&
+           a->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32 &&
+           (b->type == GGML_TYPE_F32 || b->type == GGML_TYPE_F16) && ggml_is_contiguous(b) && ggml_is_contiguous(op) &&
+           ggml_are_same_shape(b, op);
 }
 
 bool ggml_cuda_op_fwht(ggml_backend_cuda_context & ctx, const ggml_tensor * src, ggml_tensor * dst) {

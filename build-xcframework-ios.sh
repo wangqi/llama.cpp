@@ -198,6 +198,8 @@ copy_mtmd_files() {
     # DeepSeek-V4-Flash-Vision-Exp (PR #28133); clip.cpp constructs clip_graph_deepseek4v,
     # so omitting it is an undefined-symbol link error rather than a silent capability loss.
     cp -fp "tools/mtmd/models/deepseek4v.cpp" src/clip-models/
+    # wangqi 2026-09-27: Added Ling 3.0 VL vision encoder from b11222 upgrade (#29151)
+    cp -fp "tools/mtmd/models/ling3vl.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
