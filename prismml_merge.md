@@ -83,7 +83,8 @@ git log --format=%H prismml/prism --not upstream/master | sort > /tmp/theirs
 comm -13 /tmp/ours /tmp/theirs          # in prism, not carried by us
 ```
 
-As of 2026-09-18 that last command prints **67** commits. **That is the expected steady state, not
+As of 2026-09-18 that last command prints **67** commits; on 2026-09-27 it printed **104**, triaged in
+`whatsnew.md` (only `0324c6652` is a candidate). **That is the expected steady state, not
 a backlog.** Almost all of it is deliberately excluded — see the exclusion table in
 `helper/docs/llama_cpp_prism.md`. The short version:
 
@@ -212,7 +213,7 @@ cd testcases && ./run_tests.sh --no-build GGUFTypeParityTests          # 4/4
 # 3. THE GATE - every model that worked before must still work.
 cd helper/scripts/model_regression
 ./run_model_tests.py --gguf-only --scan-local --download-missing \
-    --compare /Volumes/ssd2t/modeltests/baseline-prism-pq2.json
+    --compare /Volumes/ssd2t/modeltests/baseline-b11222.json
 ./run_model_tests.py --gguf-only --tool-call --no-build
 ```
 
@@ -229,7 +230,10 @@ sweep sorts smallest-first, so the 27B runs last and cannot poison earlier resul
   and a future run should still show them.
 - `Ternary-Bonsai-2-27B-PQ2_0`: PASS, 7 GiB, 12.2 s.
 - `Bonsai-8B-Q1`: PASS (the shipping Q1_0 row).
-- Baseline for the next upgrade to diff against: `/Volumes/ssd2t/modeltests/baseline-prism-pq2.json`.
+- Superseded as the diff target by `/Volumes/ssd2t/modeltests/baseline-b11222.json` (2026-09-27, 78
+  models, 74 PASS / 4 FAIL). Its `meta.llama_cpp_sha` reads `a1a30c5` because the run was made on
+  the uncommitted merge tree, which became `12f9cb99a`. Its HunyuanOCR FAIL is stale: the files were
+  replaced with HunyuanOCR-1.5 the same day and now pass.
 
 ---
 

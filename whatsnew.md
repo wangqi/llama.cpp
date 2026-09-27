@@ -1,144 +1,109 @@
-# llama.cpp Upgrade: b10724 → v0.4.1 (b11035)
+# llama.cpp Upgrade: v0.4.1 (b11035) → v0.5.0 (b11222)
 
-**Date:** 2026-09-18
-**Commits in range:** 310 upstream commits merged (b10726 → b11035+1, `911f6cdc8`)
-**Merge commit:** `e7a6511c7`, branch `v0.4.1`
+**Date:** 2026-09-27
+**Commits in range:** 186 upstream commits merged (`911f6cdc8` → `a97cce86a`, b11222; `v0.5.0` is
+tag `7fe450e19`, so the merge target is past it)
+**Merge commit:** `12f9cb99a` on `master`
 
-Upstream adopted semantic versioning during this window: `v0.1.0` (b10463) through `v0.4.1`
-(b10964). The `bNNNN` tags still exist and still move, so nothing in our tooling breaks — but the
-branch is named for the release tag rather than the build number from here on. The merge target is
-72 commits *past* `v0.4.1`.
+The previous file in this slot described b10724 → b11035; it is in git history at `04e243217`.
 
 ---
 
 ## New Features
 
 ### New Vision Models
-- `deepseek4v.cpp` — DeepSeek-V4-Flash-Vision-Exp (PR #28133). Added to
-  `build-xcframework-ios.sh`; `clip.cpp` constructs `clip_graph_deepseek4v`, so omitting it is an
-  undefined-symbol link error rather than a silent capability loss.
+- `ling3vl.cpp` — Ling 3.0 VL (PR #29151). Added to `build-xcframework-ios.sh`; `clip.cpp`
+  constructs `clip_graph_ling3vl`, confirmed present in the built xcframework (4 symbols).
 
-No other encoder was added or renamed. Every `.cpp` in `tools/mtmd/models/` is now referenced by the
-build script, and the script holds no stale references.
+Every `.cpp` in `tools/mtmd/models/` is referenced by the build script after this change.
 
 ### New Text Model Architectures
+No new `src/models/*.cpp` in this range. Converter-only additions (no runtime change):
+
 | Model | PR | Notes |
 |-------|-----|-------|
-| HrmTextForCausalLM (DFM Mimir 1B) | #27625 | New small architecture, phone-sized |
-| Tencent Hy 4 (`hy_v4`) | #28127 | Preview architecture |
-| NVIDIA Nemotron-3-Puzzle-75B-A9B (`NemotronHPuzzle`) | #25444 | Large MoE |
-| Maple 20B-A1B | #27000 | Ternary MoE, CPU backend |
-| Kimi-K3 recurrent-state rollback | #28466 | Fixes state handling for K3 |
-| Nemotron MTP | #29018 | Extends multi-token prediction |
+| MiMo-V2.6 | #29257 | `convert_hf_to_gguf.py` support |
+| PLaMo-3 YaRN | #29528 | Converter exports YaRN scaling parameters |
+| Gemma4 DSpark draft backbone | #29226 | Speculative-decoding draft; not enabled in the app |
+| HunyuanOCR DFlash | #28890 | Speculative-decoding draft; not enabled in the app |
 
-Plus correctness fixes across the Granite family parameter counts (#28643, #28632), mimo2 SWA
-pattern loading (#28865), GDN normalisation `max` → `rsqrt` (#28068), and deepseek4 vision input
-(#28154).
+### Hadamard / FWHT (the reason this merge conflicted)
+Upstream landed its own F16-input and wide-width FWHT kernels on CPU (#27779), Metal (#29094,
+#29095), CUDA (#29096) and SYCL (#29243), overlapping the carried PrismML set. See
+`prismml_merge.md` §4 for every resolution.
 
 ### Metal / Apple Silicon
-The largest cluster in this range, ~25 commits:
+- Flash-attention vector kernels tuned per chip **family** instead of per SKU (#29075)
+- MoE and `SSM_CONV` fusion optimizations (#28948) — hybrid models such as Qwen3.5
+- Sparse flash attention optimized (#29377); FA kernels split into per-dtype libraries (#29329)
+- Fixes: FA mask bounds in the block pre-pass (#29220), FA support checks (#29122), graph capture and
+  empty graphs (#29390), missing f32 × bf16 `mul_mv` variants (#28741), macOS 27 SDK deprecations
+  (#29136)
+- New ops for Qwen4-exp and DeepSeek-V4 hyper-connections (#29000, #29169)
 
-- **Sparse flash attention** (#28098) — new FA path.
-- **Metal 4.0 tensor API on M5+/A19+** (#27461), gated behind a separate `ggml-tensor.metallib`.
-- **Single-source fusion table + fusion debug rework** (#28164).
-- **FA kernels for HSK=96 / HSV=64** (#28599), covering MiniCPM3 shapes.
-- **fa-vec tunings** for M1 Ultra, M2 Pro, M2 Max, M3, M3 Max and A18 Pro (#28088, #28122, #28015,
-  #28458, #28236, #28396, #28373, #28152).
-- **Leak fixes**: missing autoreleasepools (#27883) and an early-return leak (#28399).
-- **Idle-thread fixes** in `mul_mv_iq3_xxs` and the remaining iq `mul_mv` kernels for `ne00 < 1024`
-  (#28086, #28692).
-- **Correctness**: NaN in `mul_mm_id` when activations exceed f16 range (#26223), glu dispatch with
-  `ne00 = 1` (#28306), memory query under low-memory conditions (#27701), quantized concat (#28116).
+### CPU
+- Tiled `mul_mat` for k-quants (#27851): 3–6× on large matmuls per upstream, but **~80% (a net loss)
+  on GEMV** — do not describe this as a decode speed-up.
+- ARM repack kernels for `Q1_0` (#23492) — the upstream counterpart of the PrismML repack work
+  `prismml_merge.md` §5 declined; `Bonsai-8B-Q1` output unchanged in the regression run.
 
-### mtmd
-- `mtmd_tokenize_from_parts()` (#28250) — tokenise an array of parts instead of relying on media
-  markers. Purely additive.
-- Video ID propagated to bitmaps (#28601); idefics3 preprocessing fix (#28273); gemma4 vision
-  handling fix (#28335); Qwen3-TTS-0.6b fix (#28231).
-- Broad `const` propagation through the public surface (#28307, #28310).
+### Stability
+- K/V and recurrent-state cleanup after a failed sequence restore (#27530). The app restores session
+  state through `llama_state_load_file` (`LLaMa.swift`), so a failed restore no longer leaves stale
+  cache contents behind.
+- Allocation failures are checked to prevent crashes (#28149).
+- `llama-grammar` numeric truncation on token-id parsing fixed (#29382).
 
-### Build system
-- **CMake unity build + PCH** (#28091), with PCH removed again later (#28892). The unity build
-  stayed and is the single thing this merge had to resolve by hand — see Risk Assessment.
-- `llama-version.h` is now generated by `configure_file`, replacing the `LLAMA_VERSION` /
-  `LLAMA_COMMIT` compile definitions.
-- `GGML_METAL_TARGET_OS` added (#28163) for cross-OS metallib builds. **Not used by us** — it
-  applies only when `GGML_METAL_EMBED_LIBRARY=OFF`, and we embed.
+### Jinja / chat (upstream `common/` only)
+`dict` builtin, `sameas` test, unary +/-, a Ling 3.0 parser (#28682) and Gemma 4 / Muse Glimmer
+tool-grammar fixes. The app renders templates and parses tool calls itself, so none of these reach
+it.
 
 ---
 
 ## API Changes
 
-### `include/llama.h`
-- **Added**: `llama_adapter_lora_init_from_file_ptr(model, FILE*)` — load a LoRA adapter from an
-  open file pointer, so a GGUF can be embedded in a larger file.
-- **Changed**: `llama_sampler_chain_n` returns `int32_t` rather than `int`. ABI-identical on arm64.
+### `include/llama.h` (additive only, +91 lines)
+- **Added**: `llama_batch_ext` API (#24669) — `llama_batch_ext_init/free/clear/add/add_token/
+  add_embd/add_seq/set_embd_token/set_embd_state/set_output_*/set_pos`, `struct llama_embd`,
+  `enum llama_process_type`, `llama_process()`. The existing `llama_batch` API is unchanged; the
+  Swift bridge needs no change.
+- **Added**: `LLAMA_VOCAB_TYPE_TEST = 7` (dummy tokenizer for tests).
 
-### `ggml/include/ggml.h`
-- **Added**: `ggml_prec_set_acc`, `ggml_prec_set_src`, `ggml_flash_attn_ext_set_n_kv_max`,
-  `ggml_dsv4_hc_pre_gated`.
-- **Deprecated**: `ggml_mul_mat_set_prec`, `ggml_flash_attn_ext_set_prec` — superseded by the
-  `ggml_prec_set_*` pair. Still present.
-- ggml version is now 0.24.0.
-
-### `tools/mtmd/mtmd.h`
-- **Added**: `mtmd_input_part`, `mtmd_tokenize_from_parts()`.
-- **Changed**: `mtmd_tokenize` takes `const mtmd_context *` and
-  `const mtmd_bitmap * const * bitmaps` (was `const mtmd_bitmap **`). Both are legal implicit
-  conversions from the caller's side; `LLaMa_MModal.swift:710` passes `&bitmapArray` on a
-  `var [OpaquePointer?]`, which satisfies either import.
-- `mtmd_bitmap_init_lazy`, `mtmd_helper_support_video`, `mtmd_helper_bitmap_init_from_file/buf`,
-  `mtmd_helper_video_init*`, `mtmd_helper_model_can_chat` all gained `const` on their context
-  parameters. Non-const to const is safe for every caller.
+### `ggml/include/ggml.h`, `gguf.h`, `mtmd.h`, `clip.h`, `mtmd-helper.h`
+- No changes in this range. No new `ggml_type`, so `GGUFTypeParityTests` passes unchanged.
 
 ### State Save/Load Behavioral Changes
-None observed in this range. Existing session cache files do not need invalidating.
+- No session/state format version change. Existing session cache files remain valid.
+- A failed restore now zeroes the affected K/V and recurrent state (#27530).
 
 ---
 
 ## Risk Assessment
 
-### MEDIUM: unity build reaches sources upstream never unity-builds
-**Problem:** #28091 set `UNITY_BUILD ON` / batch 16 on the `llama` target and excluded only
-`LLAMA_CORE_SOURCES`. This fork compiles `clip.cpp`, `mtmd*.cpp`, `mtmd-helper-gen.cpp`, the
-vendored `hash/` sources and all 44 `clip-models/*.cpp` **into that same target**, because the
-xcframework merges only `libllama`/`libggml*`. Upstream builds those in a separate, non-unity
-`mtmd` target, so nothing upstream ever compiles them concatenated.
+### HIGH (resolved): duplicate `GGML_METAL_FWHT_TG_MIN_N`
+**Problem:** `ggml-metal-impl.h` auto-merged with the constant defined as 512 (ours) and 1024
+(upstream). A redefinition only warns; a mismatch with the `misc.metal` instantiations launches the
+wrong kernel shape and yields wrong output with no error.
+**Fix applied:** kept upstream's 1024 and upstream's instantiations. `test-backend-ops -o
+MUL_MAT_HADAMARD -b MTL0` 37/37.
 
-Verified by removing the guard: the build fails with
-`static declaration of 'gguf_kv_to_str' follows non-static declaration` and, more tellingly,
-upstream's own guard firing — `"mtmd-helper is a public library outside of mtmd. it must not
-include internal headers"` — because unity concatenation dragged `clip-impl.h` into
-`mtmd-helper.cpp`'s translation unit.
+### HIGH (resolved): flash-attention `nsg` cap would have been lost
+**Problem:** upstream replaced the `FATTN_SMEM` macro our 2026-05-14 iPhone crash fix used, and still
+does not cap `nsg` nor check threadgroup memory in `supports_op`.
+**Fix applied:** re-applied the cap on upstream's `fa_smem` lambda. `FLASH_ATTN_EXT` 4954/4954 on Metal.
 
-**Required fix (applied):** a second `SKIP_UNITY_BUILD_INCLUSION` block in `src/CMakeLists.txt`
-listing every source this fork adds. `src/models/*.cpp` still unity-builds in 10 batches, so
-upstream's build-time win is preserved.
+### MEDIUM: Metal Hadamard guard replaced by upstream's predicate
+**Problem:** the fork's 2026-09-18 guard is gone; upstream's `ggml_metal_op_mul_mat_use_fwht()` now
+decides.
+**Mitigation:** the fold's rotation is a materialised F32 matrix, so any declined width still
+rotates correctly on the generic path or the CPU. `Ternary-Bonsai-2-27B-PQ2_0` / `-PTQ1_0` pass.
 
-### LOW: `llama-version.h` generation
-`configure_file(llama-version.h.in …)` plus `${CMAKE_CURRENT_BINARY_DIR}` on the private include
-path is now mandatory — `src/llama.cpp:4` includes the generated header. Both halves are in the
-resolved conflict. Dropping either is a hard build break, not a silent one.
+### LOW: PrismML #161 width-512 threadgroup kernel dropped
+About 3.6% decode at Hadamard block width 512 only. No action required.
 
-### LOW: `deepseek4v.cpp`
-Missing from the build script until this upgrade. Link-time failure, impossible to miss.
-
-### LOW: Metal behaviour
-~25 kernel commits, including sparse FA and the M5+/A19+ tensor API. Both local Metal patches
-re-based cleanly onto rewritten neighbours and the fa-vec path has upstream's own smem cap, so there
-is no second site to patch. Still worth a device benchmark: this is the quiet-failure class.
-
----
-
-## Local Modifications — status after the merge
-
-| File | Status |
-|---|---|
-| `src/llama-vocab.cpp` — UINT32 `token_type` tolerance | **intact**, auto-merged |
-| `ggml/src/ggml-metal/ggml-metal-ops.cpp` — cpy `nth`, FA `nsg` cap | **intact**, auto-merged onto rewritten code |
-| `src/CMakeLists.txt` — mtmd/clip/hash sources into `libllama` | **conflicted, resolved**; gained the unity-build exclusion |
-
-PrismML `Q1_0` needs no re-application: `GGML_TYPE_Q1_0 = 41` is upstream-official now.
+### LOW: CPU tiled k-quant path
+Net loss on GEMV per upstream's own numbers; watch background (CPU) decode speed on device.
 
 ---
 
@@ -146,23 +111,50 @@ PrismML `Q1_0` needs no re-application: `GGML_TYPE_Q1_0 = 41` is upstream-offici
 
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
-| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst |
-| Metal library | `GGML_METAL_EMBED_LIBRARY` overridable; copies `.metallib` when OFF | Always embedded, so `GGML_METAL_TARGET_OS` does not apply |
-| mtmd | Separate `libmtmd` | Copied into `src/` and compiled into `libllama` |
-| vendored `hash/` | Separate `vendor::hash` static lib | Copied to `src/hash/`, compiled into `libllama` |
+| Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
+| mtmd | separate `mtmd` target | copied into `libllama` (`src/clip-models/`) |
+| Metal FA kernels | per-dtype libraries (#29329) | same, via CMake — no script change |
 
-**Structural change needed:** one line — the `deepseek4v.cpp` copy. Applied.
+**One change:** `ling3vl.cpp` copy line added. `ggml-cpu/tiled/*` and the per-dtype FA `.metal`
+files are picked up by upstream CMake with no script change.
+
+---
+
+## Verification
+
+- xcframework: built for iOS device, simulator, macOS, Mac Catalyst.
+- Regression pass 1 (`--scan-local --download-missing`, baseline `baseline-prism-pq2.json`):
+  **78 models, 74 PASS / 4 FAIL, 0 REGRESSED**; all 73 shared models byte-identical greedy output.
+  FAILs: HunyuanOCR (stale pre-b9263 files, since replaced with HunyuanOCR-1.5 and now PASS),
+  Bonsai-27B-Q1_0 (already failing), and two Laya encoder files the completion harness cannot run.
+- Regression pass 2 (`--tool-call`): **31 models, 19 PASS / 0 FAIL / 12 SKIP** (documented exemptions);
+  all 31 `raw_output` fixtures identical.
+- `test-backend-ops` on Metal: `MUL_MAT_HADAMARD` 37/37, PQ2_0/PTQ1_0 ops 266/266, `FLASH_ATTN_EXT`
+  4954/4954.
+- Swift: `GGUFTypeParityTests`, `ToolCallReplayTests`, `GGUFVisionModelTests` (3 pass, 1 skip),
+  `VideoFrameMtmdTests` 3/3 and six local-engine suites pass.
+
+---
+
+## PrismML Triage (Step 7.2, 2026-09-27)
+
+`comm -13 ours theirs` now prints **104** (67 on 2026-09-18); all 23 carried picks are still in
+`prismml/prism`, so no rebase happened. Of the 37 new commits, 14 touch code we build:
+
+| Commit | What | Decision |
+|---|---|---|
+| `0324c6652` (#245) | Keep Hadamard rotation tensors out of `CPU_REPACK` buffers (SIGSEGV at load) | **Candidate.** 6 lines in `llama-model.cpp`, applies cleanly. Not reachable with the shipped PQ2_0/PTQ1_0 files (no ARM repack for those types), but reachable for a Hadamard-folded Q4_0/Q8_0/Q1_0 band run CPU-only (background) |
+| `078192590` (#257) | Hadamard contract v2: tied output weights | Defer until a v2 file ships; today's runtime rejects v2 loudly (`unsupported prism.hadamard.version: 2`) |
+| `df7c49e84` (#262) | Metal PTQ1_0 mat-vec for 2 to 4 columns | Performance only (small batches); not taken |
+| `164c33700`, `10df29881`, `d2c9ddd05`, `adfffbe41` | x86 AVX2/VNNI/SSE Q8_K activation path and its follow-up fixes | Not applicable: x86 only, and the fixes repair a path we do not carry |
+| `65ac430ab`, `76e7487ce` | Metal 4 tensor-API language version | Upstream Metal area, not PQ2_0/PTQ1_0 correctness |
+| `288859a96`, `279df6644` | DFlash / DFlash2 speculative decoding | Speculative decoding is not enabled in the app |
+| `ee8ad0ef6`, `49cc6774d`, `ea50aba8c` | Warnings, a one-line style fix, a PR-text commit | Not taken |
 
 ---
 
 ## Action Items
 
-1. **REQUIRED** — done: resolve `src/CMakeLists.txt`, add the unity-build exclusion, add
-   `deepseek4v.cpp` to the build script. Verified by a host build: configure, `libllama.a` links,
-   `clip_graph_deepseek4v` and `hash_sha256_hex` present in the archive.
-2. **REQUIRED** — rebuild the xcframework (`./build-xcframework-ios.sh`).
-3. **REQUIRED after building** — run the model regression suite. A loader-tolerance change is
-   invisible to `testcases/`, which never opens a real model; this is exactly how b10724's
-   `token_type` breakage reached a user.
-4. **Recommended** — benchmark the cpy and flash-attention hot paths on an A18 device, given the
-   volume of Metal churn.
+1. **Done**: conflicts resolved, `ling3vl.cpp` added, xcframework rebuilt, both regression passes.
+2. **Recommended**: on an A18 device, run Gemma (head_dim 512) with a quantized KV cache to confirm
+   the re-applied FA cap, and compare background decode speed on a k-quant model.
