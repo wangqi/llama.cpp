@@ -1,109 +1,128 @@
-# llama.cpp Upgrade: v0.4.1 (b11035) → v0.5.0 (b11222)
+# llama.cpp Upgrade: v0.5.0 (b11222) → v0.7.0 (b11716)
 
-**Date:** 2026-09-27
-**Commits in range:** 186 upstream commits merged (`911f6cdc8` → `a97cce86a`, b11222; `v0.5.0` is
-tag `7fe450e19`, so the merge target is past it)
-**Merge commit:** `12f9cb99a` on `master`
+**Date:** 2026-10-17
+**Commits in range:** 494 upstream commits merged (`a97cce86a` → `797de63b2`, b11716). Tag `v0.7.0`
+is `620d2225c`; the merge target is 47 commits past it.
+**Merge commit:** `5bd8aafd1` on `master`
 
-The previous file in this slot described b10724 → b11035; it is in git history at `04e243217`.
+The previous file in this slot described v0.4.1 → v0.5.0; it is in git history at `7de420c29`.
 
 ---
 
 ## New Features
 
-### New Vision Models
-- `ling3vl.cpp` — Ling 3.0 VL (PR #29151). Added to `build-xcframework-ios.sh`; `clip.cpp`
-  constructs `clip_graph_ling3vl`, confirmed present in the built xcframework (4 symbols).
+### New Vision / Audio Encoders
+Three new `tools/mtmd/models/*.cpp`, all added to `build-xcframework-ios.sh` and confirmed linked
+(`clip_graph_*` symbols present in every slice):
 
-Every `.cpp` in `tools/mtmd/models/` is referenced by the build script after this change.
+- `muse-spark-audio.cpp` — Muse Spark Open audio encoder (#30616); uses the normal file-based audio path
+- `nemotron-omni.cpp` — NVIDIA Nemotron Omni image encoder (`patch_embeddings` over pixels)
+- `voxtral-rt.cpp` — Voxtral Realtime, with the new streaming `mtmd_audio_stream` API (#30629).
+  **Not usable in the app**: `mtmd.cpp` routes `PROJECTOR_TYPE_VOXTRAL_RT` only through
+  `mtmd_audio_stream`, and `llamacpp_swift` sends whole files through
+  `mtmd_helper_bitmap_init_from_file`. Compiled in so the link succeeds; listed nowhere user-facing.
+
+Also: Cohere2 vision (#30062), MiniCPM-V 4.7 (#29416), EmbeddingGemma 2 text+vision+audio (#30054),
+LightOnOCR native resolution by default (#30600).
 
 ### New Text Model Architectures
-No new `src/models/*.cpp` in this range. Converter-only additions (no runtime change):
-
 | Model | PR | Notes |
 |-------|-----|-------|
-| MiMo-V2.6 | #29257 | `convert_hf_to_gguf.py` support |
-| PLaMo-3 YaRN | #29528 | Converter exports YaRN scaling parameters |
-| Gemma4 DSpark draft backbone | #29226 | Speculative-decoding draft; not enabled in the app |
-| HunyuanOCR DFlash | #28890 | Speculative-decoding draft; not enabled in the app |
-
-### Hadamard / FWHT (the reason this merge conflicted)
-Upstream landed its own F16-input and wide-width FWHT kernels on CPU (#27779), Metal (#29094,
-#29095), CUDA (#29096) and SYCL (#29243), overlapping the carried PrismML set. See
-`prismml_merge.md` §4 for every resolution.
+| Prism Bonsai 2 27B (`prism.hadamard` runtime) | #29600 | Upstream now owns the Hadamard fold runtime we carried; see Risk Assessment |
+| GLM-5.3-Flash (GLM5-Next) | #27773 | `glm5-next.cpp` |
+| K2 Horizon (dense + MoVA) | #29535 | `k2-horizon.cpp` |
+| Kolibri-1 (Aleph Alpha) | #30673 | `kolibri1.cpp` |
+| Beam (Reflection) | #30670 | `beam.cpp` |
+| Muse Spark Open | #30616 | `muse-spark.cpp` |
+| Maion Coder | — | `maion-coder.cpp` |
+| LFM2.5-Encoder 350M / 230M | #29862 | Encoders |
+| Decision models: Granite Switch Decision, vLLM Decision 2 / D3, clef, nimble, pplx-decider, LiquidAI d1-3B / d1-omni-600M | #30676, #30378, #30383, #29831, #29844, #30044, #30110, #30114 | Classifier heads, not generators |
+| MTP for Mellum 2.1, Qwen3.8 Flash Next image embeds | #30612, #30397 | Speculative decoding is not enabled in our bridge |
 
 ### Metal / Apple Silicon
-- Flash-attention vector kernels tuned per chip **family** instead of per SKU (#29075)
-- MoE and `SSM_CONV` fusion optimizations (#28948) — hybrid models such as Qwen3.5
-- Sparse flash attention optimized (#29377); FA kernels split into per-dtype libraries (#29329)
-- Fixes: FA mask bounds in the block pre-pass (#29220), FA support checks (#29122), graph capture and
-  empty graphs (#29390), missing f32 × bf16 `mul_mv` variants (#28741), macOS 27 SDK deprecations
-  (#29136)
-- New ops for Qwen4-exp and DeepSeek-V4 hyper-connections (#29000, #29169)
+- Few-row MMA mat-mul, extended to every remaining `src0` type (#29869, #30065): faster small-batch decode.
+- Tensor-API flash attention kernels for F16 KV (#29570) and BF16 (#30491); 128/96 head-dim FA kernels (#30209).
+- Fixes: `mul_mat_id` with duplicate ids (#30373), `kernel_mul_mm` on very large tensors (#28748),
+  excess threadgroup memory in quantized FA (#29340), MUL_MAT+ADD fusion when the residual is a MUL_MAT (#30100),
+  temporary private transfer buffers now released (#29777).
+- FWHT performance work (#29602); `mxfp4` mat-mul in bf16 math (#29770); left/circular `GGML_OP_PAD` (#29561).
 
 ### CPU
-- Tiled `mul_mat` for k-quants (#27851): 3–6× on large matmuls per upstream, but **~80% (a net loss)
-  on GEMV** — do not describe this as a decode speed-up.
-- ARM repack kernels for `Q1_0` (#23492) — the upstream counterpart of the PrismML repack work
-  `prismml_merge.md` §5 declined; `Bonsai-8B-Q1` output unchanged in the regression run.
+- AVX2 dot product for `Q2_0` (#30447), and AVX2 CPUs now use F16C (#30270). Affects the macOS x86_64 slice only.
 
-### Stability
-- K/V and recurrent-state cleanup after a failed sequence restore (#27530). The app restores session
-  state through `llama_state_load_file` (`LLaMa.swift`), so a failed restore no longer leaves stale
-  cache contents behind.
-- Allocation failures are checked to prevent crashes (#28149).
-- `llama-grammar` numeric truncation on token-id parsing fixed (#29382).
+### Memory / Runtime
+- Experimental GPU cache for MoE experts kept in host memory (`moe_cache_size`, #29887, #30112). Off by default.
+- Logits buffer skipped when the graph produces none (#30255); KV cache rotation metadata saved exactly (#28498).
 
-### Jinja / chat (upstream `common/` only)
-`dict` builtin, `sameas` test, unary +/-, a Ling 3.0 parser (#28682) and Gemma 4 / Muse Glimmer
-tool-grammar fixes. The app renders templates and parses tool calls itself, so none of these reach
-it.
+### Tokenizer / Jinja
+- PLaMo-3 tokenizer (`LLAMA_VOCAB_TYPE_PLAMO3`, #30045); opt-in NFC normalization for Unigram (#30390).
+- Jinja: loop-variable scoping (#30533), `tojson` float/nan/inf now matches Python (#30362, #30483), faster context copies (#30562).
+- Chat API refactor (#30210) and output parts (#30389). These are `common/` only and not linked by the app.
+
+### Security
+- GGUF: reject tensor sizes that wrap after padding (#26979); integer overflow fix in ggml/gguf (#29384).
+- `ggml_acc` out-of-bounds write with a negative offset (#30135).
 
 ---
 
 ## API Changes
 
-### `include/llama.h` (additive only, +91 lines)
-- **Added**: `llama_batch_ext` API (#24669) — `llama_batch_ext_init/free/clear/add/add_token/
-  add_embd/add_seq/set_embd_token/set_embd_state/set_output_*/set_pos`, `struct llama_embd`,
-  `enum llama_process_type`, `llama_process()`. The existing `llama_batch` API is unchanged; the
-  Swift bridge needs no change.
-- **Added**: `LLAMA_VOCAB_TYPE_TEST = 7` (dummy tokenizer for tests).
+### `include/llama.h`
+- **Changed**: `LLAMA_SESSION_VERSION` 10 → 11, `LLAMA_STATE_SEQ_VERSION` 3 → 4.
+- **Added**: `llama_context_params.moe_cache_size`. The bridge uses `llama_context_default_params()`, so it stays zeroed (disabled).
+- **Added**: `llama_get_causal_attn()`; perf counters `n_reallocs_same` / `n_reallocs_diff`; `LLAMA_VOCAB_TYPE_PLAMO3`.
 
-### `ggml/include/ggml.h`, `gguf.h`, `mtmd.h`, `clip.h`, `mtmd-helper.h`
-- No changes in this range. No new `ggml_type`, so `GGUFTypeParityTests` passes unchanged.
+### `tools/mtmd/mtmd.h`, `clip.h`
+- **Added**: `mtmd_audio_stream_*` streaming audio API, `mtmd_support_audio_stream()`; `clip_enc_state_*`, `clip_get_image_max_tokens()`.
+- **Changed**: `mtmd_get_memory_usage()` now returns `struct mtmd_memory_usage` instead of a `std::map`. Not called by the app or `llamacpp_swift`.
+
+### `ggml/include/ggml.h`
+- No breaking change. `GGML_TYPE_COUNT` is still 144 with our `PQ2_0` (142) / `PTQ1_0` (143); `GGUFTypeParityTests` 4/4.
 
 ### State Save/Load Behavioral Changes
-- No session/state format version change. Existing session cache files remain valid.
-- A failed restore now zeroes the affected K/V and recurrent state (#27530).
+State files written before this upgrade fail the version check and load nothing. In
+`llamacpp_swift` `load_state()` ignores the return value and `tokens_count` stays 0, so the
+context starts cold rather than crashing. The app never enables `save_load_state` (the
+`ChatConfig` copy is commented out), so no user data is affected.
 
 ---
 
 ## Risk Assessment
 
-### HIGH (resolved): duplicate `GGML_METAL_FWHT_TG_MIN_N`
-**Problem:** `ggml-metal-impl.h` auto-merged with the constant defined as 512 (ours) and 1024
-(upstream). A redefinition only warns; a mismatch with the `misc.metal` instantiations launches the
-wrong kernel shape and yields wrong output with no error.
-**Fix applied:** kept upstream's 1024 and upstream's instantiations. `test-backend-ops -o
-MUL_MAT_HADAMARD -b MTL0` 37/37.
+### MEDIUM: The Hadamard runtime is now upstream's, not the PrismML picks
+**Problem:** Upstream `a9d27ac69` (#29600, PrismML-authored) landed the same `prism.hadamard`
+runtime we carried, refactored around `llama_model::hdmd`. The auto-merge left both copies in place,
+including a doubled inverse rotation of the token embedding in `build_tok` with no conflict marker,
+which would give fluent nonsense with no error.
+**Mitigation:** All 8 runtime files taken from upstream whole (our side was pure Hadamard code);
+`grep -rn 'hadamard_inverses\|hadamard_weight_blocks\|hadamard_memo' src/ conversion/` is empty.
+`Ternary-Bonsai-2-27B-PQ2_0`, `-PTQ1_0` and `Bonsai-8B-Q1` pass the regression suite, and a clean
+load proves the graph verifier accepted every fold. Gains `prism.hadamard.version 2` (tied output).
+Resolution detail: `prismml_merge.md` §4, "The b11716 merge".
 
-### HIGH (resolved): flash-attention `nsg` cap would have been lost
-**Problem:** upstream replaced the `FATTN_SMEM` macro our 2026-05-14 iPhone crash fix used, and still
-does not cap `nsg` nor check threadgroup memory in `supports_op`.
-**Fix applied:** re-applied the cap on upstream's `fa_smem` lambda. `FLASH_ATTN_EXT` 4954/4954 on Metal.
+### LOW: `arch-fallback.h` x86 `q2_0` alias dropped
+Upstream added a real AVX2 `ggml_vec_dot_q2_0_q8_0`; keeping our alias would be a duplicate symbol in
+the macOS x86_64 slice. The slice links.
 
-### MEDIUM: Metal Hadamard guard replaced by upstream's predicate
-**Problem:** the fork's 2026-09-18 guard is gone; upstream's `ggml_metal_op_mul_mat_use_fwht()` now
-decides.
-**Mitigation:** the fold's rotation is a materialised F32 matrix, so any declined width still
-rotates correctly on the generic path or the CPU. `Ternary-Bonsai-2-27B-PQ2_0` / `-PTQ1_0` pass.
+### LOW: CUDA sign-fused FWHT removed
+`fwht.{cu,cuh}` and `ggml-cuda.cu` taken from upstream. Not built for any Apple target.
 
-### LOW: PrismML #161 width-512 threadgroup kernel dropped
-About 3.6% decode at Hadamard block width 512 only. No action required.
+### LOW: Old llama state files invalidated
+See State Save/Load above. No action required.
 
-### LOW: CPU tiled k-quant path
-Net loss on GEMV per upstream's own numbers; watch background (CPU) decode speed on device.
+---
+
+## PrismML triage
+
+143 commits in `prismml/prism` are not carried (104 on 2026-09-27; the jump is mostly work upstream
+absorbed with #29600). New since the last triage and relevant to our quant types, all performance
+rather than correctness, so none picked per `prismml_merge.md` §3:
+
+- `6bfcd79a2` NEON `vec_dot` for `PQ2_0` (#265), `4fbda1292` NEON + i8mm `vec_dot` for `PTQ1_0` (#290)
+- `5e9365f05` Metal: five `PTQ1_0` rows per dense mat-vec (#225)
+- `79971a480` Metal: SwiGLU folded into the signed FWHT (#287), `445fa8209` four GDN state rows per SIMD group (#292)
+
+The NEON pair is the most valuable if CPU fallback speed on iPhone ever matters.
 
 ---
 
@@ -112,49 +131,29 @@ Net loss on GEMV per upstream's own numbers; watch background (CPU) decode speed
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| mtmd | separate `mtmd` target | copied into `libllama` (`src/clip-models/`) |
-| Metal FA kernels | per-dtype libraries (#29329) | same, via CMake — no script change |
-
-**One change:** `ling3vl.cpp` copy line added. `ggml-cpu/tiled/*` and the per-dtype FA `.metal`
-files are picked up by upstream CMake with no script change.
+| mtmd | Built as `libmtmd` | Sources copied into `src/` and compiled into `libllama` |
+| New in this range | No change to `build-xcframework.sh` | 3 encoder copies added (above) |
 
 ---
 
 ## Verification
 
-- xcframework: built for iOS device, simulator, macOS, Mac Catalyst.
-- Regression pass 1 (`--scan-local --download-missing`, baseline `baseline-prism-pq2.json`):
-  **78 models, 74 PASS / 4 FAIL, 0 REGRESSED**; all 73 shared models byte-identical greedy output.
-  FAILs: HunyuanOCR (stale pre-b9263 files, since replaced with HunyuanOCR-1.5 and now PASS),
-  Bonsai-27B-Q1_0 (already failing), and two Laya encoder files the completion harness cannot run.
-- Regression pass 2 (`--tool-call`): **31 models, 19 PASS / 0 FAIL / 12 SKIP** (documented exemptions);
-  all 31 `raw_output` fixtures identical.
-- `test-backend-ops` on Metal: `MUL_MAT_HADAMARD` 37/37, PQ2_0/PTQ1_0 ops 266/266, `FLASH_ATTN_EXT`
-  4954/4954.
-- Swift: `GGUFTypeParityTests`, `ToolCallReplayTests`, `GGUFVisionModelTests` (3 pass, 1 skip),
-  `VideoFrameMtmdTests` 3/3 and six local-engine suites pass.
-
----
-
-## PrismML Triage (Step 7.2, 2026-09-27)
-
-`comm -13 ours theirs` now prints **104** (67 on 2026-09-18); all 23 carried picks are still in
-`prismml/prism`, so no rebase happened. Of the 37 new commits, 14 touch code we build:
-
-| Commit | What | Decision |
-|---|---|---|
-| `0324c6652` (#245) | Keep Hadamard rotation tensors out of `CPU_REPACK` buffers (SIGSEGV at load) | **Candidate.** 6 lines in `llama-model.cpp`, applies cleanly. Not reachable with the shipped PQ2_0/PTQ1_0 files (no ARM repack for those types), but reachable for a Hadamard-folded Q4_0/Q8_0/Q1_0 band run CPU-only (background) |
-| `078192590` (#257) | Hadamard contract v2: tied output weights | Defer until a v2 file ships; today's runtime rejects v2 loudly (`unsupported prism.hadamard.version: 2`) |
-| `df7c49e84` (#262) | Metal PTQ1_0 mat-vec for 2 to 4 columns | Performance only (small batches); not taken |
-| `164c33700`, `10df29881`, `d2c9ddd05`, `adfffbe41` | x86 AVX2/VNNI/SSE Q8_K activation path and its follow-up fixes | Not applicable: x86 only, and the fixes repair a path we do not carry |
-| `65ac430ab`, `76e7487ce` | Metal 4 tensor-API language version | Upstream Metal area, not PQ2_0/PTQ1_0 correctness |
-| `288859a96`, `279df6644` | DFlash / DFlash2 speculative decoding | Speculative decoding is not enabled in the app |
-| `ee8ad0ef6`, `49cc6774d`, `ea50aba8c` | Warnings, a one-line style fix, a PR-text commit | Not taken |
+- `build-xcframework-ios.sh`: all four slices built, 0 errors. `PQ2_0`/`PTQ1_0` kernels,
+  `load_hparams_hadamard` and the new encoders present in `ios-arm64` and both macOS archs.
+- Model regression pass 1 vs `baseline-b11222.json` (84 models): **81 passed, 3 failed, 0 skipped, zero
+  REGRESSED**. The 3 failures were all in the baseline: two Laya files (decision models, now excluded
+  from `--scan-local`) and `Bonsai-27B-Q1_0`, which was a half-downloaded file (1.92 of 3.80 GB),
+  re-fetched with matching SHA-256 and now PASS. Expected clean sweep: 82 / 0.
+- Pass 2, tool-call probe (38 catalogue models): **25 passed, 0 failed, 13 skipped** (all skips are
+  documented capability exemptions).
+- `ToolCallReplayTests`: 2/3. The failure is `LFM2.5-VL-1.6B-Q4_0`, a first-time fixture whose correct
+  JSON-array call inside `<|tool_call_start|>` the app's parser chain does not handle. App parser gap, not an engine regression.
+- `GGUFTypeParityTests`: 4/4.
 
 ---
 
 ## Action Items
 
-1. **Done**: conflicts resolved, `ling3vl.cpp` added, xcframework rebuilt, both regression passes.
-2. **Recommended**: on an A18 device, run Gemma (head_dim 512) with a quantized KV cache to confirm
-   the re-applied FA cap, and compare background decode speed on a k-quant model.
+1. **Recommended**: `ToolCallParserChain` should accept the JSON-array form inside LFM tool-call tags.
+2. **Recommended**: HunyuanOCR now loads (baseline: load failure) but its vision output is `,,,,,,,`; check by hand.
+3. **Recommended**: save the next clean full sweep as `/Volumes/ssd2t/modeltests/baseline-b11716.json`.

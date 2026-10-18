@@ -161,6 +161,30 @@ Verification that caught nothing wrong and is worth repeating: build `test-backe
 and run `-o MUL_MAT_HADAMARD -b MTL0` (37/37), `-o MUL_MAT|MUL_MAT_ID|GET_ROWS|CPY -p 'pq2_0|ptq1_0'`
 (266/266) and `-o FLASH_ATTN_EXT -b MTL0` (4954/4954).
 
+### The b11716 merge (2026-10-17): upstream now owns the Hadamard runtime too
+
+<!-- the b11222 "keep both" rows above are superseded for the runtime files // wangqi modified 2026-10-17 -->
+Upstream `a9d27ac69` (#29600, "support for Prism Bonsai 2 27B", authored by PrismML) landed the
+same `prism.hadamard` runtime we carried from PrismML #121/#137/#148, refactored around
+`llama_model::hdmd` (`llama_hadamard`), `load_hparams_hadamard()`, `load_tensors_hadamard()` and
+`build_hadamard_input()`. It adds `prism.hadamard.version 2` (tied output), which our copy rejected.
+
+**The b11222 rows above that say "keep both" for `llama-context.cpp`, `llama-graph.cpp` and
+`conversion/base.py` are now wrong.** Keeping both leaves two runtimes; the auto-merge already
+put two inverse-embedding blocks in `build_tok` with no conflict marker, which rotates every token
+embedding twice: fluent nonsense, no error. Our side of these files was pure Hadamard runtime, so
+the resolution was to take upstream whole:
+
+| File | Resolution |
+|---|---|
+| `src/llama-{context,graph,model}.{cpp,h}`, `conversion/{base,qwen}.py` | Take upstream (`git checkout MERGE_HEAD -- <file>`; `llama-model.h` and `llama-context.h` auto-merged with duplicates, so `--theirs` does not reach them). Check: `grep -rn 'hadamard_inverses\|hadamard_weight_blocks\|hadamard_memo' src/ conversion/` prints nothing. |
+| `ggml-cpu/arch-fallback.h` | Upstream's `#elif` (adds `_M_ARM64EC`) plus our `ptq1_0` alias. In the x86 block drop our `q2_0` alias: upstream #30447 added an AVX2 `ggml_vec_dot_q2_0_q8_0`, and the alias is a duplicate symbol in the macOS x86_64 slice. |
+| `ggml-cuda/mmq.cuh` | Keep our `PQ2_0` cases, with upstream's new `prec_src1` template argument on `write_back_*`. |
+| `ggml-cuda/fwht.{cu,cuh}`, `ggml-cuda.cu` | Take upstream; our sign-fused `ggml_cuda_op_fwht_signed` fusion was removed with it. Not built. |
+
+What remains ours after this merge is only the `PQ2_0` / `PTQ1_0` quant types (ggml, CPU, Metal,
+CUDA, `llama.h`, `gguf-py`). The Hadamard runtime is upstream's.
+
 ### Vulkan is declined on purpose
 
 `ggml-vulkan.cpp` and the Vulkan shaders conflicted heavily. We build no Vulkan backend for any
@@ -226,8 +250,12 @@ sweep sorts smallest-first, so the 27B runs last and cannot poison earlier resul
 ### Reference results (2026-09-18, `b6f8660a7`)
 
 - Pass 1: **75 models, 73 PASS / 2 FAIL, zero REGRESSED.** The two FAILs (`HunyuanOCR-Q4_K_M`,
-  `Bonsai-27B-Q1_0`) were **already failing in the pre-change baseline** — they are not regressions,
-  and a future run should still show them.
+  `Bonsai-27B-Q1_0`) were **already failing in the pre-change baseline** — they are not regressions.
+  <!-- both FAILs since explained // wangqi modified 2026-10-17 -->
+  Neither should appear any more: HunyuanOCR was replaced (see below), and `Bonsai-27B-Q1_0` was
+  a half-downloaded file (1.92 of 3.80 GB) that failed with `data is not within the file bounds`.
+  It was re-fetched on 2026-10-17, SHA-256 matching Hugging Face, and passes. If it fails again,
+  check the file size before the engine.
 - `Ternary-Bonsai-2-27B-PQ2_0`: PASS, 7 GiB, 12.2 s.
 - `Bonsai-8B-Q1`: PASS (the shipping Q1_0 row).
 - Superseded as the diff target by `/Volumes/ssd2t/modeltests/baseline-b11222.json` (2026-09-27, 78
