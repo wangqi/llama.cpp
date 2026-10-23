@@ -5158,9 +5158,36 @@ static void ggml_backend_cpu_repack_buffer_set_tensor(ggml_backend_buffer_t buff
     GGML_ASSERT(size == ggml_nbytes(tensor));
 
     auto tensor_traits = (ggml::cpu::repack::tensor_traits_base *) tensor->extra;
-    auto OK            = tensor_traits->repack(tensor, data, size);
+    if (tensor_traits == nullptr) {
+        // The repack buffer can be selected as the preferred CPU buffer even
+        // for tensors which have no optimized layout. Keep those tensors in
+        // their original format instead of dereferencing a null trait.
+        GGML_LOG_DEBUG("%s: copying tensor %s without a repack trait\n", __func__, tensor->name);
+        if (size > 0) {
+            memcpy(tensor->data, data, size);
+        }
+        GGML_UNUSED(buffer);
+        return;
+    }
+
+    auto OK = tensor_traits->repack(tensor, data, size);
 
     GGML_ASSERT(OK == 0);
+    GGML_UNUSED(buffer);
+}
+
+static void ggml_backend_cpu_repack_buffer_get_tensor(ggml_backend_buffer_t buffer, const struct ggml_tensor * tensor,
+                                                       void * data, size_t offset, size_t size) {
+    auto tensor_traits = (const ggml::cpu::repack::tensor_traits_base *) tensor->extra;
+    if (tensor_traits != nullptr) {
+        // Repacked tensors use an optimized layout that is not equivalent to
+        // the public GGML tensor layout. Do not expose those bytes as if they
+        // were the original tensor; an inverse transform is required first.
+        GGML_ABORT("%s: reading repacked tensor %s is not supported\n", __func__, tensor->name);
+    }
+
+    memcpy(data, (const char *) tensor->data + offset, size);
+
     GGML_UNUSED(buffer);
 }
 
@@ -5180,7 +5207,7 @@ static ggml_backend_buffer_t ggml_backend_cpu_repack_buffer_type_alloc_buffer(gg
     buffer->buft              = buft;
     buffer->iface.init_tensor = ggml_backend_cpu_repack_buffer_init_tensor;
     buffer->iface.set_tensor  = ggml_backend_cpu_repack_buffer_set_tensor;
-    buffer->iface.get_tensor  = nullptr;
+    buffer->iface.get_tensor  = ggml_backend_cpu_repack_buffer_get_tensor;
     buffer->iface.cpy_tensor  = nullptr;
     return buffer;
 }
