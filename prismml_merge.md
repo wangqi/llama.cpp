@@ -40,7 +40,7 @@ cd thirdparty/llama.cpp
 BASE=04e243217   # the v0.4.1 pin this set sits on. Use the SHA: a *branch* named v0.4.1
                  # also exists, so the bare tag name is ambiguous and git will warn.
 
-git log --grep="cherry picked from commit" --oneline $BASE..HEAD | wc -l   # expect 23
+git log --grep="cherry picked from commit" --oneline $BASE..HEAD | wc -l   # expect 25 on master: our 23 plus two upstream b11854 commits (701fd25b3, 649dcb103) that carry their own trailers
 git log --grep="^\[PrismML\] Carry PrismML" --oneline $BASE..HEAD | wc -l   # expect 2
 ```
 
@@ -80,7 +80,7 @@ git log --grep="cherry picked from commit" --format=%H $BASE..HEAD | while read 
 done > /tmp/ours
 printf '%s\n' 67a9ab9943682a042107048bddd0aef656431fde 23e863c7d8251ffa52abf83c6101dbccee817392 >> /tmp/ours
 sort -o /tmp/ours /tmp/ours
-wc -l < /tmp/ours                      # 25
+wc -l < /tmp/ours                      # 27 on master (25 ours + the two upstream trailer commits); extras are harmless, comm -13 lists only what we lack
 
 git log --format=%H prismml/prism --not upstream/master | sort > /tmp/theirs
 comm -13 /tmp/ours /tmp/theirs          # in prism, not carried by us
