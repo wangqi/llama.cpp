@@ -205,6 +205,12 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/muse-spark-audio.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/nemotron-omni.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/voxtral-rt.cpp" src/clip-models/
+    # Added new encoders from the b11854 upgrade: SenseNova-U1 vision and Soprano audio;
+    # clip.cpp constructs clip_graph_sensenova_u1 / clip_graph_soprano, so omitting them is an
+    # undefined-symbol link error. soprano.cpp includes "../mtmd-audio.h", copied to src/ above.
+    # wangqi modified 2026-10-24
+    cp -fp "tools/mtmd/models/sensenova-u1.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/soprano.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
