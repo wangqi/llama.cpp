@@ -5,7 +5,7 @@ working in this repo during an upgrade._
 
 **Audience:** whoever runs the weekly `llama.cpp` upstream merge.
 
-**One-line summary:** this fork carries **23 cherry-picked commits** from
+**One-line summary:** this fork carries **25 cherry-picked commits** (23 with an `-x` trailer, 2 plain picks of 2026-10-24) from
 `github.com/PrismML-Eng/llama.cpp` branch `prism`, on branch `prism-pq2`, adding the `PQ2_0` /
 `PTQ1_0` quant types and the `prism.hadamard` activation-rotation runtime. **They are ordinary
 commits in our history. Do not re-pick, re-merge or "restore" them on an upgrade.**
@@ -41,14 +41,15 @@ BASE=04e243217   # the v0.4.1 pin this set sits on. Use the SHA: a *branch* name
                  # also exists, so the bare tag name is ambiguous and git will warn.
 
 git log --grep="cherry picked from commit" --oneline $BASE..HEAD | wc -l   # expect 23
+git log --grep="^\[PrismML\] Carry PrismML" --oneline $BASE..HEAD | wc -l   # expect 2
 ```
 
-The branch carries **24** commits over that base: the 23 picks plus one that annotates the
+The branch carries **26** commits over that base: the 25 picks plus one that annotates the
 hand-resolved conflicts.
 
-Every pick was applied with `git cherry-pick -x`, so each message ends with
-`(cherry picked from commit <sha>)`. That trailer is the provenance record and the reason the set
-is self-describing — keep using `-x` if you ever add to it.
+Picks before 2026-10-24 used `git cherry-pick -x`; new picks use plain `git cherry-pick` and record
+provenance in the subject `[PrismML] Carry PrismML <short sha>` (no trailers). The `-x` trailers and
+those subjects together are the provenance record.
 
 A functional check that does not depend on git history at all:
 
@@ -72,12 +73,14 @@ cd thirdparty/llama.cpp
 BASE=04e243217
 git fetch prismml prism
 
-# The 23 SHAs we carry. Take the LAST cherry-pick trailer in each message: PrismML's own
+# The 25 SHAs we carry (23 from trailers, 2 plain picks added by printf). Take the LAST cherry-pick trailer in each message: PrismML's own
 # commit bodies contain nested trailers, so a naive grep over the range returns 41, not 23.
 git log --grep="cherry picked from commit" --format=%H $BASE..HEAD | while read c; do
     git log -1 --format=%B "$c" | grep -o "cherry picked from commit [0-9a-f]\{40\}" | tail -1 | awk '{print $NF}'
-done | sort > /tmp/ours
-wc -l < /tmp/ours                      # 23
+done > /tmp/ours
+printf '%s\n' 67a9ab9943682a042107048bddd0aef656431fde 23e863c7d8251ffa52abf83c6101dbccee817392 >> /tmp/ours
+sort -o /tmp/ours /tmp/ours
+wc -l < /tmp/ours                      # 25
 
 git log --format=%H prismml/prism --not upstream/master | sort > /tmp/theirs
 comm -13 /tmp/ours /tmp/theirs          # in prism, not carried by us
@@ -98,7 +101,7 @@ a backlog.** Almost all of it is deliberately excluded — see the exclusion tab
 Only pick something new if it fixes correctness on `PQ2_0`, `PTQ1_0` or the Hadamard path.
 
 **PrismML rebases.** After a rebase their SHAs go unreachable and `merge-base` collapses. They keep
-`prism-b<n>-<sha>` release tags; the `-x` trailers preserve the original SHAs regardless. If
+`prism-b<n>-<sha>` release tags; the `-x` trailers (the subject SHA for the two plain picks) preserve the original SHAs regardless. If
 `comm` suddenly reports ~1,100 commits, you are looking at a post-rebase branch, not new work.
 
 ---
@@ -305,3 +308,16 @@ context explicitly will try to allocate a ~24 GB shape.
   `ai/AIChatModelMLX.swift`, rather than building a new mechanism.
 - **Vision untested.** The `mmproj-Q8_0` (629 MB) uses `qwen3vl_merger`, already supported at
   `tools/mtmd/clip.cpp:975`; it needs no PrismML work, but nobody has tried it.
+
+## 9. Picks added 2026-10-24
+
+Carried after the b11854 upgrade's triage, with plain `git cherry-pick` (no `-x`), subjects
+`[PrismML] Carry PrismML <sha> …`:
+
+| PrismML commit | Fixes | Resolution |
+|---|---|---|
+| `23e863c7d` (#227) | `gguf.cpp`: the legacy `Q2_0` layout-size hint called `ggml_row_size(GGML_TYPE_PQ2_0, ne)` on rows not divisible by `QK_PQ2_0`. Under our `-DNDEBUG` builds that assert is compiled out, so the hint was silently mis-sized rather than aborting. Adds a `test-gguf` odd-block case. | clean pick |
+| `67a9ab994` (#190) | `ggml-cpu/repack.cpp`: `set_tensor` dereferenced a null `tensor_traits` for tensors placed in the repack buffer without an optimised layout (now a plain copy), and the buffer's `get_tensor` was `nullptr`, so any read-back of a repacked tensor jumped to null (now copies unpacked tensors and aborts with a message on packed ones). | 2 conflict regions in `ggml_repack_get_optimal_repack_type`, our side empty in both, **deleted whole**: (1) PrismML's `Q1_0` instance declarations, which we already declare at the top of the function (keeping them is a redefinition error), plus the x86 `pq2_0_4x8_q8_0` instance; (2) the AVX512 `PQ2_0` branch. We do not carry PrismML's x86 PQ2_0 repack code, so neither belongs here. The `set_tensor` / `get_tensor` / `iface` hunks auto-merged. |
+
+Proof: host `cmake --build … --target ggml-cpu test-gguf` (no redefinition) and `ctest -R '^test-gguf$'`
+pass, then the xcframework, the Bonsai PQ2_0 rows and the full `--gguf-only` sweep.

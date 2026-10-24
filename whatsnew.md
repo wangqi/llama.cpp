@@ -183,6 +183,12 @@ New since the last triage and touching code we carry:
 - Performance only (unchanged from last time): `6bfcd79a2`, `4fbda1292` (NEON vec_dot PQ2_0 / PTQ1_0),
   `5e9365f05`, `df7c49e84` (Metal PTQ1_0 mat-vec), `79971a480`, `445fa8209`, `b87ca7225`.
 
+**Carried on 2026-10-24** (branch `prism-fixes-20261024`, plain cherry-picks, subjects
+`[PrismML] Carry PrismML <sha>`): `23e863c7d` clean; `67a9ab994` with its two x86 `PQ2_0` repack
+regions dropped (one also re-declared `Q1_0` instances we already declare, which would be a
+redefinition error). Verified by a host build of `ggml-cpu` + `test-gguf` and the gates in
+`prismml_merge.md` §9. Count of carried picks is now 25.
+
 Upstream itself added `hexagon` Q1_0/Q2_0 hadamard ops (#30627), WebGPU Q2_0 (#30914) and LoRA on
 hadamard-folded weights (#30910); none affect Apple builds. No new ggml types upstream.
 
