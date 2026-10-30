@@ -1,196 +1,170 @@
-# llama.cpp Upgrade: b11716 → b11854 (user version still v0.7.0)
+# llama.cpp Upgrade: b11854 → b12015 (user version v0.7.0 → v0.8.0)
 
-**Date:** 2026-10-24
-**Commits in range:** 144 upstream commits merged (`5a269f433` b11716 → `df9beac71` b11854), no new
-upstream release tag. Merge commit `dd0253c51` on branch `tag-b11854`.
+**Date:** 2026-10-30
+**Commits in range:** 155 upstream commits merged (`96c2b5317` our b11854 + PrismML follow-ups → `a34de8618`
+b12015). Upstream released **v0.8.0** in this range (`8642541b2`, #31309), so the user version moves.
+Merge commit `6856bc26d` on branch `tag-b12015`.
 **Integration doc:** `helper/docs/llama_cpp.md` · **Consumers:** `thirdparty/llamacpp_swift/Sources/`,
 `ai/AIChatModel.swift`, `ai/AIChatModelBase.swift`, `libs/GGUFileStructure.swift`, `ai/tool/parser/`
 
-The previous file in this slot described v0.5.0 (b11222) → v0.7.0 (b11716); it is in git history at `5a269f433`.
+The previous file in this slot described b11716 → b11854; it is in git history at `96c2b5317`.
 
-A small, low-risk round. `include/llama.h` and `ggml/include/gguf.h` did not change at all, and no
-symbol the bridge or app calls changed (P7: **zero forced fixes**). The one silent ship-blocker was
-the iOS build script: upstream added two clip encoders (`sensenova-u1.cpp`, `soprano.cpp`) that
-`clip.cpp` constructs, and our script copies encoders from an explicit list, so the xcframework would
-have failed to link. Both copies were added in the merge commit. For the app, the useful changes are
-MoE correctness fixes on Metal, image preprocessing that now matches transformers for LFM2-VL and the
-Qwen-VL family (both in the catalogue), and faster vocabulary loading.
+The round is dominated by Liquid AI's LFM3 family (text 1.7B, VL 2B, Audio 2B, Omni 2B, plus the d1
+decision heads), all small enough for iOS, and by the new **FP8 E4M3** tensor type, whose id 43 collided
+with nothing of ours but did conflict textually with the PrismML ids (keep-both, 6 conflicts). Two
+forced consumer fixes (P7): (1) `GGUFType` needs `f8_e4m3 = 43`, otherwise the GGUF inspector truncates
+on FP8 files and `GGUFTypeParityTests` fails; (2) **silent behaviour change**: a video frame is now
+"video" only when it is both `mergeable` **and** `is_video` (#31283). Before b12015 `mergeable` alone
+set the clip batch `is_video`, which our video path relied on, so without the new
+`mtmd_bitmap_set_is_video(true)` call our frames would quietly drop to the still-image path (visible only
+as worse video answers on Nemotron-Omni / LFM3-VL). Both fixed. Also silent: the build script copy list
+needed the three LFM3 encoders, added in the merge commit.
 
 ---
 
 ## New Features
 
 ### New Vision / Audio Encoders
-Two new `tools/mtmd/models/*.cpp`, both added to `build-xcframework-ios.sh` (merge commit, tagged
-`wangqi modified 2026-10-24`); after the edit the script's list matches `tools/mtmd/models/` exactly.
-
-- `sensenova-u1.cpp` — SenseNova U1 vision encoder (#28919): patch embedding, GELU, adjacent-pair 2D
-  RoPE, spatial downsampling and a dense projector, dynamic resolution. Pairs with the new
-  `sensenova_u1` text architecture (U1.5-8B-MoT, understanding branch only; generation branches are
-  rejected at conversion). Works through the normal image path, so it runs in the app with an imported
-  GGUF, but at 8B it is a Mac model, not an iPhone one.
-- `soprano.cpp` — Soprano TTS (#28607): Soprano-80M / Soprano-1.1-80M
-  ([ekwek/Soprano-1.1-80M](https://huggingface.co/ekwek/Soprano-1.1-80M)), a Qwen3 backbone plus a
-  Vocos decoder loaded as a gen-only mmproj (`clip_cap.has_gen_audio`, `mtmd_caps.gen_audio`), with a new
-  `soprano` pre-tokenizer. **Not usable in the app**: it runs only through `mtmd_helper_gen_audio_*` /
-  `mtmd_gen_audio_process`, which `llamacpp_swift` does not call (same as Qwen3-TTS and Pocket TTS).
-  Compiled in so the link succeeds. Size would suit iOS if a generation path is ever wired (Opportunities).
-
-Other mtmd changes:
-- MiniCPM-OCR 1.0 (#30979, `openbmb/MiniCPM-OCR-1.0`): the MiniCPM-V 4.6 stack (qwen35 text, new
-  `PROJECTOR_TYPE_MINICPM_OCR_1_0`, resize aligned to 28). No new `.cpp`; uses the existing minicpmv graph.
-- LFM2-VL / LFM2.5-VL: tiles now stretch the image to the grid like `Lfm2VlImageProcessor` instead of
-  letterboxing (#30261), tiling params read from GGUF metadata with the old constants as defaults
-  (#30840), bilinear resize matches torchvision (#30943).
-- Qwen-VL family (Qwen2/2.5/3-VL, dots.ocr, Exaone 4.5, …): smart_resize with no padding and Python
-  rounding, matching the HF processor (#30736).
-- Gemma 4 unified vision (`PROJECTOR_TYPE_GEMMA4UV`) uses GELU in its FFN (#30882). The E2B/E4B
-  catalogue models use the other Gemma 4 projector and are unaffected.
-- `mtmd_gen` now has a state object (#30902) and `build_inp_temporal_merge` moved to the base class (#31065).
+- **`lfm3vl.cpp`** — LFM3-VL vision encoder (conv2d blocks + embedding norm, `PROJECTOR_TYPE_LFM3VL`), with a
+  dedicated video-frame preprocessor (`preprocess_video_frame`) and its own video template (#31252, #31283).
+- **`lfm3a.cpp`** — LFM3-Audio audio-input encoder (`PROJECTOR_TYPE_LFM3A`), also used for live transcription
+  through `mtmd_audio_stream` with an "asr" chat template (#31257).
+- **`lfm3a-gen.cpp`** — LFM3-Audio speech generator: MaskGIT depthformer + codec decoder + ISTFT
+  (`MTMD_GEN_AUDIO_TYPE_LFM3A`, `PROJECTOR_TYPE_LFM3A_GEN`); flash attention disabled for the depthformer.
+- `paddleocr.cpp` and `deepseek4v.cpp` got small fixes; `nemotron-omni.cpp` now reads the stricter `is_video`.
 
 ### New Text Model Architectures
 | Model | PR | Notes |
 |-------|-----|-------|
-| Flint (`FlintForCausalLM`, `RecursiveSI/flint`) | #30928 | Qwen2-MoE style: leading dense layers, shared experts, SWA pattern, NoPE layers. Size not stated upstream; check before cataloguing |
-| SenseNova U1 / U1.5-8B-MoT | #28919 | 8B, dense understanding branch; Mac only |
-| Nemotron-3 / 3.5-Embed 1B (`nvidia/Nemotron-3.5-Embed-1B-BF16`) | #30877, #30974 | Embedding model (mistral3 conversion), tokenization fix in #30974. Not a chat model |
-| Nemotron: non-standard GQA, BPE tokenizer, `domyn-small` pre-type (`domyn/Domyn-Small-v1.0`) | #23343 | Size not stated upstream |
-| H2O-Lightning-4B decision model (`h2oai/h2o-lightning-4b`) | #30361 | Classifier head on Qwen3.5-4B, not a generator; labels stored in GGUF (`llama_model_decision_label`) |
-| Qwen3 bidirectional attention + `dense_2` output projection | #30607 | For Qwen3-based embedding models |
+| LFM3 (`lfm3`) — LiquidAI/LFM3-1.7B | #31252 | Hybrid conv + attention like LFM2, SWA; recurrent state rollback enabled. Also the trunk of LFM3-VL-2B / -Audio-2B / -Omni-2B |
+| Limite (`limite`) — paradigma-inc/limite-1b-violetto | #29433 | 1B text model, new arch |
+| LiquidAI d1-2B / d1-Omni-2B / d1-omni-600M | #31275 | **Not generative**: LFM3(-VL/-Omni) trunk with a decision head read at the last token, served by `POST /v1/systemone`. Text generation is rejected |
+| MiniCPM-OCR-Jev | #30980 | **Not generative**: Qwen3.5-VL trunk with a value head that scores OCR text against an image |
 
-≤4B iOS-suitable generators added this round: **MiniCPM-OCR 1.0** (same stack as the catalogue's
-MiniCPM-V-4.6-Q8_0) and possibly Flint and Domyn Small once their sizes are confirmed.
+Larger, not iOS targets: DeepSeek-V4.1-Flash (`deepseek41`, #31086), Mistral "le chonk" (`mistral-large4`,
+#31376), plus GLM5-next QSA, MiniMax-M3, Qwen4-exp (merged tensors on convert, old GGUFs still load) and
+DSV4 follow-ups.
 
 ### Metal / Apple Silicon
-- Fix: `moe_reduce` fusion race when dst aliases its inputs, which gave rare non-deterministic wrong
-  results on MoE models (#30795).
-- Fix: missing MoE `mul_mm` kernel variant for 9 experts per token (#30610 / #30699).
-- Fix: memory leaks in the GPU capture path (#30890). Debug capture only.
-- Faster argmax (two-pass partial reduction) and `pool_1d` (#30862).
-- `MUL_MAT_ID` with id `-1` skips the slot and zeroes the row (#26631); `kernel_mul_mv_id` gained `ntg`.
-  Our PQ2_0/PTQ1_0 id instantiations go through the `kernel_mul_mv_id_t` typedef and follow the change (P3).
-- New `GGML_OP_TOP_K_MASK` fused op for top-k sparse attention (QSA, #30640); used by qwen4exp only.
-
-### CPU
-- NEON now uses the single-instruction fp32 → fp16 conversion instead of the portable software path
-  (#30505). Affects the CPU path on iPhone and Apple Silicon Macs (F16 KV writes, CPU fallback).
-- Vectorized silu/expf (#30791) is s390x only; kleidiai SVE kernels (#30808) do not apply to Apple.
-- `ggml_time_us` overflow fix (#30969).
+- Faster MXFP4 mat-vec; full threadgroups for unary / binary / GLU kernels (#31075), plus a compile fix for
+  older Metal toolchains (#31360).
+- New `GGML_OP_TOP_K_MASK` kernel (#31230); overflow fix for large matrix output offsets (#30072);
+  `mul_mm_id` amax rescaling removed (#30924).
+- FP8 E4M3 supported on CPU and in Metal `supports_op` (#27512).
+- KV-cache rotation constants kept on the GPU (#31073).
 
 ### Runtime / Tokenizer / Jinja
-- Vocabulary loading optimized (#30679): faster model load. `gguf_kv_to_str` gained a defaulted
-  `max_len` argument; `clip-impl.h` keeps its own 2-argument copy (separate TU via our unity-build exclusion).
-- MoE down projection scaled per expert token instead of a global amax (#30861); `-sm tensor` denied
-  for Mellum/Flint (#31081). Multi-GPU only.
-- K-shift skipped when no layer uses RoPE (#30965 context; `llama-kv-cache.cpp`).
-- Tekken and GPT-4o pre-tokenizer regexes gain `\p{M}` in lookaheads (#30845); `pixtral` pre-type now
-  uses the Tekken regex rather than Llama 3 (#30960).
-- New `tokenizer.ggml.clean_spaces` key (#30940) and per-pre-type defaults (lfm2, glm4/5, gemma4, exaone4,
-  mellum2, minicpm5, …). Only `llama_detokenize` applies it; the bridge decodes with
-  `llama_token_to_piece`, so output is unchanged.
-- LoRA adapters on `prism.hadamard`-folded weights (#30910).
-- Jinja: hexadecimal string escapes (#30929), `unique` filter (#30819), namespace attributes no longer
-  shadowed by dict methods (#30941). `common/` chat code is not linked by the app; templates are
-  rendered by the bridge's own path.
-- Server: realtime transcription API, `POST /tts`, `--connect` (`LLAMA_CONNECT`, OFF by default) — not built for Apple.
+- DRY sampler: sequence breakers capped at 64 distinct entries (`LLAMA_DRY_MAX_SEQ_BREAKERS`), duplicates
+  ignored — fixes CPU/memory exhaustion from a large breaker list (#31035).
+- Grammar: recursion depth limit, now mandatory (#29755, #31153); chat JSON nested > 128 levels rejected (#30242).
+- Jinja `select` / `selectattr` argument handling fixed (#31059); qwen3-coder reasoning/content split
+  before template separators (#30557); reasoning-budget forcing ends on an end tag from the prompt (#31374).
+  All in `common/` (server path) — the app renders templates in Swift and parses tool calls in `ai/tool/parser/`.
+- Gemma 3n / Gemma 4: `token_embd` created before the tied output, saving ~216 MiB when input and output share
+  a buffer type (CPU-only load) (#31394).
+- Loader reuses the tensor staging buffer (#31321); `no_alloc` respected in all memory caches (#31087).
+- Recurrent memory and the DSV4 cache refuse rollbacks past the snapshots of the last ubatch (#31368).
+- Security: control-vector layer index and M-RoPE position loops bounded (#31336); truncated GGUF tensor data
+  rejected in merge (#31044); RPC bounds checks.
+
+### Server (not shipped in the app)
+Realtime conversation + transcription + tool calls on `/v1/realtime` (#31269, #31287), reasoning effort
+levels from the template, deferred tools, router memory margin, cpp-httplib 0.64.0, many WebUI changes.
 
 ---
 
 ## API Changes
 
 ### `include/llama.h`
-- **No change.** `LLAMA_SESSION_VERSION` stays 11, `LLAMA_STATE_SEQ_VERSION` stays 4.
-- `src/llama-ext.h` (not shipped in the xcframework headers): **Added** `llama_model_decision_label()`.
+- **Added** `LLAMA_FTYPE_MOSTLY_F8_E4M3 = 42` (PrismML ftypes 141/142/143 kept) — no bridge use. Do **not**
+  add it to `GGUFType` (that enum holds ggml_type ids; pinned by `testFtypeIdsAreNotInTheTensorTypeEnum`).
+- **Added** `#define LLAMA_DRY_MAX_SEQ_BREAKERS 64` — `GPT_SPM.swift` passes `params.drySequenceBreakers`
+  (default 4 entries); more than 64 distinct ones are now ignored with a warning. No fix needed.
 
 ### `ggml/include/ggml.h`
-- **Added**: `GGML_OP_TOP_K_MASK` (appended after `GGML_OP_DSV4_HC_POST`), `ggml_top_k_mask()`,
-  `ggml_prec_get_acc()`, `ggml_prec_get_src()`.
-- **Documented**: `ggml_add_id` / `ggml_mul_mat_id` id `-1` semantics.
-- Types unchanged: `GGML_TYPE_COUNT` 144, `Q1_0`=41, `Q2_0`=42, `PQ2_0`=142, `PTQ1_0`=143.
-  `GGUFTypeParityTests` PASS (4 tests).
-- Bridge/app impact: none. Neither uses `ggml_op` values or these functions (`ggml_type` only in
-  `libs/GGUFileStructure.swift`).
+- **Added** `GGML_TYPE_F8_E4M3 = 43`, `GGML_FTYPE_MOSTLY_F8_E4M3 = 29`, `ggml_fp8_e4m3_t`. `GGML_TYPE_COUNT`
+  stays 144 (PrismML `PQ2_0` 142 / `PTQ1_0` 143). **Forced app fix:** `GGUFType.f8_e4m3 = 43` + description
+  `"f8_e4m3"` in `libs/GGUFileStructure.swift`.
+- (`ggml-backend.h`, outside the header list: new batched tensor copy API, #30881, used by context state I/O.
+  No bridge use.)
 
-### `ggml/include/gguf.h`
-- **No change.**
+### `ggml/include/gguf.h`, `tools/mtmd/clip.h`
+No change.
 
-### `tools/mtmd/mtmd.h`, `mtmd-helper.h`, `clip.h`
-- **Changed (experimental audio-gen API)**: `mtmd_gen_audio_process()` takes a new `mtmd_gen_state *`;
-  `mtmd_gen_inp.seed`, `mtmd_gen_inp.state_data/state_size` and `mtmd_gen_out.state_data/state_size`
-  removed. **Added** `mtmd_gen_state_init/free/reset`, `mtmd_gen_state_params(_default)`,
-  `MTMD_GEN_AUDIO_TYPE_SOPRANO`, `mtmd_caps.gen_audio`.
-- **Added**: `mtmd_audio_stream_get_n_rows()`, `mtmd_audio_stream_get_n_rows_flushed()`.
-- **Changed (helper)**: `mtmd_helper_gen_audio_inp.stream` (new first field), `mtmd_helper_gen_audio_inp_default()`,
-  `mtmd_helper_gen_audio_flush()`; C++ `gen_audio` wrapper constructor replaced by `init()`/`valid()`.
-- **Changed (clip.h, internal)**: `clip_encode_params.seed/state_in/state_out` → `gen_state`;
-  `clip_gen_state_init/free/reset`; `clip_cap.has_gen_audio`.
-- Bridge/app impact: none. The bridge uses only `mtmd_init_from_file`, `mtmd_context_params_default`,
-  `mtmd_helper_init_opt(_default)`, bitmap / chunk / tokenize / `mtmd_helper_eval_chunks`,
-  `mtmd_support_audio` and `mtmd_helper_bitmap_init_from_file` — all unchanged.
+### `tools/mtmd/mtmd.h`
+- **Added** `mtmd_bitmap_set_is_video()`; video frames must be **both** mergeable and is_video
+  (`is_video_frame()`), and that now drives `batch_f32.is_video` and `preprocess_video_frame`.
+  **Forced bridge fix:** `LLaMa_MModal.createBitmapsFromVideo` now calls `mtmd_bitmap_set_is_video(bitmap, true)`
+  after `mtmd_bitmap_set_mergeable`.
+- **Added** `enum mtmd_video_template` (DEFAULT / LFM3 / LFM3_OMNI), `struct mtmd_video_config`,
+  `mtmd_get_video_config()` (model-recommended fps / frame count / frame size) — opportunity.
+- **Added** `mtmd_audio_stream_params.prompt / n_prompt`, `mtmd_audio_stream_is_seq_start()`; the
+  `get_n_rows` semantics are now "rows whose text has been sampled". Bridge does not use audio streams.
+- **Added** `MTMD_GEN_AUDIO_TYPE_LFM3A`, `mtmd_gen_inp.penalty_repeat / penalty_last_n`. Bridge does not use gen.
+
+### `tools/mtmd/mtmd-helper.h`
+- **Added** `mtmd_helper_get_capabilities(model, mctx)` → `mtmd_helper_cap` {chat, vision, audio, video,
+  audio_stream, text_gen, audio_gen, audio_gen_spk_ref} (#31183).
+- **Deprecated** `mtmd_helper_model_can_chat` and `mtmd_helper_support_video` (moved, still exported). Bridge
+  uses neither.
+- **Added** `mtmd_helper_video_init_params.no_soundtrack`, `mtmd_helper_gen_audio_inp.n_past / out_mode / voice`,
+  `enum mtmd_helper_gen_audio_out_mode`, `mtmd_helper_gen_audio_next_is_text()`,
+  `mtmd_helper_gen_audio_get_logit_bias()`, `mtmd_helper_audio_stream_get_logit_bias()`. No bridge use
+  (the ffmpeg video helper is not in our xcframework).
 
 ### State Save/Load Behavioral Changes
-None. Session and sequence-state versions are unchanged and `llama-context.cpp` / `llama-kv-cache.cpp`
-state read/write code is untouched. Existing state files stay valid (the app does not enable
-`save_load_state` anyway).
+`LLAMA_SESSION_VERSION` 11 and `LLAMA_STATE_SEQ_VERSION` 4 unchanged; no file-format change. Context state
+I/O now copies tensors through the batched copy API (#30881) — implementation only. **No session-cache
+invalidation needed.** Recurrent rollback bound (#31368) only matters with `n_rs_seq > 0` (speculative
+drafts); the bridge leaves it at the default.
 
 ---
 
 ## Risk Assessment — 5 risks (0 high, 2 medium, 3 low)
 
-### MEDIUM: iOS build script encoder list
-**Problem:** Without the two new `cp` lines the xcframework fails to link (`clip_graph_sensenova_u1`,
-`clip_graph_soprano` undefined).
-**Mitigation:** Lines added in `dd0253c51`. **Verify:** the running `build-xcframework-ios.sh` finishes
-with 0 errors, and `nm` on the `ios-arm64` slice shows `clip_graph_sensenova_u1` and `clip_graph_soprano`.
+### MEDIUM: Video frames silently lose video preprocessing
+**Problem:** #31283 split `is_video` from `mergeable`; our frames set only `mergeable`. **Fix:** bridge now sets
+`mtmd_bitmap_set_is_video(true)` per frame (`LLaMa_MModal.swift`). **Verify:**
+`TEST_TIMEOUT_SECS=1200 ./run_tests.sh VideoFrameMtmdTests` and `GGUFVisionModelTests`. **Status:** P10.
 
-### MEDIUM: Vision preprocessing changed for catalogue models
-**Problem:** LFM2-VL tiles now stretch rather than letterbox and resize like torchvision; Qwen-VL-family
-smart_resize no longer pads and rounds half-even. The image token count and pixels fed to
-LFM2.5-VL-450M/1.6B, Qwen3.5 0.8B/2B/4B (vision), dots.ocr, PaddleOCR-VL and Youtu-VL can change.
-Should be closer to reference, but a drift in output is possible.
-**Verify:** the full GGUF regression pass with vision models against `baseline-b11716.json`
-(`./run_model_tests.py --gguf-only`), comparing the vision-mode replies of those models; no REGRESSED.
+### MEDIUM: PrismML ids beside F8_E4M3 (6 conflicts, keep-both)
+**Problem:** any wrong slot in a type table gives fluent nonsense on Bonsai PQ2_0. P3 audited every table;
+quick gate `Ternary-Bonsai-1.7B-PQ2_0` passed. **Verify:** P10 generate + tool-call rows for the Bonsai
+PQ2_0 / PTQ1_0 models. **Status:** P10.
 
-### LOW: Tekken / pixtral pre-tokenizer change
-`\p{M}` lookaheads and `pixtral` → Tekken regex change token boundaries for combining marks. Affects
-Ministral-3-3B (catalogue). **Verify:** Ministral-3-3B rows in the regression pass, plus one prompt with
-decomposed accents (e.g. "café") reading back intact.
+### LOW: `GGUFType` parity
+Fixed (`f8_e4m3 = 43`). **Verify:** `./run_tests.sh GGUFTypeParityTests` (build, not `--no-build`).
 
-### LOW: `MUL_MAT_ID` id `-1` / `kernel_mul_mv_id` signature
-Upstream changed the id kernel signature; PrismML id kernels follow via the typedef. **Verify:**
-`Ternary-Bonsai-1.7B-PQ2_0` quick gate (PASS, coherent "Paris" reply) plus an MoE model
-(`LFM2-8B-A1B-Q2_K`, `Huihui4-8B-A4B`) in the regression pass.
+### LOW: DRY breaker cap
+A user list with > 64 distinct breakers is truncated with a log warning. **Verify:** none needed beyond the
+regression sweep.
 
-### LOW: `gguf_kv_to_str` default argument vs `clip-impl.h` copy
-Two declarations, separate translation units through our unity-build exclusion in `src/CMakeLists.txt`.
-**Verify:** the xcframework build has no redefinition / ambiguous-call error in `clip.cpp` or `llama-impl.cpp`.
+### LOW: Context state I/O rewritten on batched copies
+Formats unchanged. **Verify:** the session-cache round trip in the P10 sweep / a chat reopen on device.
+
+---
+
+## New models for the catalogue (≤ 4B, candidates only — nothing downloaded)
+
+| Model | Params | Candidate GGUF (Q4_K_M size) | Fit for our bridge |
+|---|---|---|---|
+| LFM3-1.7B | 1.7B | `LiquidAI/LFM3-1.7B-GGUF` `LFM3-1.7B-Q4_K_M.gguf` (~1.1 GB) | Text chat; natural successor to LFM2.5-1.2B |
+| LFM3-VL-2B | ~2B | `LiquidAI/LFM3-VL-2B-GGUF` Q4_K_M (~1.1 GB) + `mmproj-LFM3-VL-2B-Q8_0.gguf` (~203 MB) / F16 379 MB | **Text + vision works with our mtmd bridge** (image bitmaps); video works as frames (no `<X.X seconds>` timestamps — those come only from the helper video path) |
+| LFM3-Audio-2B | ~2B | `LiquidAI/LFM3-Audio-2B-GGUF` Q4_K_M (~1.1 GB) + mmproj Q8_0 (~304 MB) | mmproj holds an audio-input encoder + speech generator → our `projectorRole` classes it `.chatInput`, so audio-in chat should load; speech output needs `mtmd_helper_gen_audio` (not wired). Needs a test before cataloguing |
+| LFM3-Omni-2B | ~2B | `LiquidAI/LFM3-Omni-2B-GGUF` Q4_K_M (~1.1 GB) + mmproj Q8_0 (~507 MB) | Vision + audio input in one mmproj; usable as text+vision(+audio) chat, speech out not wired |
+| Limite 1B Violetto | 1B | community only: `yamura4/limite-1b-violetto-GGUF` `gguf/limite-1b-violetto-Q4_K_M.gguf` (~734 MB) | Text chat; no first-party GGUF |
+| d1-2B / d1-Omni-2B / d1-omni-600M | 0.6–2B | `LiquidAI/d1-2B-GGUF` etc. | Not chat models (decision heads) — see Opportunities |
+| MiniCPM-OCR-Jev | — | `openbmb/MiniCPM-OCR-Jev-gguf` | Not a chat model (OCR scorer) |
+
+Larger new architectures (DeepSeek-V4.1-Flash, Mistral Large 4) are out of scope.
 
 ---
 
 ## PrismML triage
-
-155 commits in `prismml/prism` are not carried (143 on 2026-10-17). Full list:
-`/Volumes/ssd2t/modeltests/thirdparty-upgrade/run-20261024/llama/p3-prism-new-annotated.txt`. None picked.
-New since the last triage and touching code we carry:
-
-- `67a9ab994` ggml-cpu repack: null repack-trait / read callbacks. In our tree `set_tensor` dereferences
-  `tensor->extra` unguarded (`repack.cpp:5161`), but the repack buffer is only chosen for a weight whose
-  op passes `supports_op`, which requires a non-null trait (`repack.cpp:5201`, `:5217`), so the null path
-  is not reached through the normal loader. Our aarch64 repack covers Q1_0 only. Low priority.
-- `23e863c7d` gguf legacy Q2_0 size hint for rows not divisible by 128. Our `gguf.cpp:833` check is a
-  plain `assert`, compiled out in release. Optional, 3 lines.
-- `420bed3d3` llama-quant refuses PQ2_0/PTQ1_0 output without `prism.hadamard` metadata — quantize only.
-- Performance only (unchanged from last time): `6bfcd79a2`, `4fbda1292` (NEON vec_dot PQ2_0 / PTQ1_0),
-  `5e9365f05`, `df7c49e84` (Metal PTQ1_0 mat-vec), `79971a480`, `445fa8209`, `b87ca7225`.
-
-**Carried on 2026-10-24** (branch `prism-fixes-20261024`, plain cherry-picks, subjects
-`[PrismML] Carry PrismML <sha>`): `23e863c7d` clean; `67a9ab994` with its two x86 `PQ2_0` repack
-regions dropped (one also re-declared `Q1_0` instances we already declare, which would be a
-redefinition error). Verified by a host build of `ggml-cpu` + `test-gguf` and the gates in
-`prismml_merge.md` §9. Count of carried picks is now 25.
-
-Upstream itself added `hexagon` Q1_0/Q2_0 hadamard ops (#30627), WebGPU Q2_0 (#30914) and LoRA on
-hadamard-folded weights (#30910); none affect Apple builds. No new ggml types upstream.
+`prismml/prism` b87ca7225 → 9d9efeadb (2026-10-29): 37 new commits since the 2026-10-24 triage, 33 CUDA-only.
+Uncarried total 165. None picked. Non-CUDA candidates, all deferred: 30bc02218 (x86 AVX-512/AVX2 PTQ1_0 vec_dot,
+macOS x86_64 slice perf only), 63f16c408 (batched sched input uploads, touches ggml-backend.cpp), a15369706
+(Metal empty async uploads, marked wip), ac9c5fec9 (server top-k host time). Metal carry verified intact.
 
 ---
 
@@ -199,52 +173,62 @@ hadamard-folded weights (#30910); none affect Apple builds. No new ggml types up
 | Aspect | Official `build-xcframework.sh` | Our `build-xcframework-ios.sh` |
 |--------|--------------------------------|-------------------------------|
 | Platforms | iOS, macOS, visionOS, tvOS | iOS, macOS, Mac Catalyst only |
-| mtmd | Built as `libmtmd` (CMake list gained `sensenova-u1.cpp`, `soprano.cpp`) | Sources copied into `src/` and compiled into `libllama` |
-| New in this range | No change to `build-xcframework.sh`; `-D` flags unchanged | 2 encoder copies added (SenseNova U1 #28919, Soprano #28607) |
-| New CMake option | `LLAMA_CONNECT` (OFF) | Not set; tools gate `LLAMA_BUILD_TOOLS` intact |
-| New sources | `common/file-lock.cpp` (common only) | Not compiled; `common/` not linked |
+| mtmd | Built as `libmtmd` (CMake list gained `lfm3vl.cpp`, `lfm3a.cpp`, `lfm3a-gen.cpp`) | Sources copied into `src/clip-models/` (glob) and compiled into `libllama`; 3 copy lines added in `6856bc26d` |
+| `build-xcframework.sh`, `src/CMakeLists.txt` | Unchanged | Unchanged |
+| `ggml/CMakeLists.txt` | `GGML_VERSION_MINOR` 27 → 28; new `GGML_SYCL_SUPPORT_XMX` option | No action (SYCL not built) |
 
-No other structural changes. No new public headers in `include/` or `ggml/include/`; the one new mtmd
-include (`../mtmd-audio.h` from `soprano.cpp`) resolves to the already-copied `src/mtmd-audio.h`.
-
----
+Copy list equals `tools/mtmd/models/*.cpp` (the `diff` check in `llamacpp-patterns.md` prints nothing).
 
 ## Conflicts and fork patches
 
-Clean auto-merge, 0 conflicts, 427 files. `wangqi modified` marker inventory identical before and after
-(6 files). The 19 files changed on both sides were audited line by line: every fork-added line present,
-no fork-removed line returned. Kept: Metal cpy `nth` restore and FA `nsg` cap, vocab UINT32 token_type
-patch, tools `LLAMA_BUILD_TOOLS` gate, commented-out ggml-cpu `cplan` warning. The ggml-metal-device
-trap stays retired. Details: `handoff-P3.md` in the run folder.
+| File | Resolution |
+|---|---|
+| `ggml/include/ggml.h` | `GGML_TYPE_F8_E4M3 = 43` + PrismML 142/143, COUNT 144 ("44..141 unused"); `GGML_FTYPE` 29 + 128/129 |
+| `include/llama.h` | `LLAMA_FTYPE_MOSTLY_F8_E4M3 = 42` + PrismML 141/142/143 |
+| `ggml/src/ggml-cpu/quants.h` | keep both declarations |
+| `ggml/src/ggml-cuda/mmq.cuh` | PQ2_0 mma case `write_back_mma<..., prec_src1, false>` (new trailing arg) |
+| `gguf-py/gguf/constants.py` | 3 hunks keep-both |
+| `src/llama-model-loader.cpp` | 2 hunks keep-both |
+
+Each PrismML block tagged `wangqi modified 2026-10-30` (8 markers). `wangqi modified` inventory in `src ggml
+tools common` identical to `96c2b5317` (arch-fallback.h 1, cuda/common.cuh 1, cuda/mmvq.cu 1,
+ggml-metal-ops.cpp 4, src/CMakeLists.txt 5, llama-vocab.cpp 1), block bodies byte-identical; nothing absorbed
+or restored. PrismML mention counts per file unchanged.
 
 ## Dependencies
-No dependency move (vendored LibreSSL 4.4.0, BoringSSL, cpp-httplib 0.62.0 are server/common only).
+No dependency move (cpp-httplib 0.62.0 → 0.64.0 is server-only, not in the xcframework).
 
 ---
 
 ## Opportunities (not built)
 | Upstream feature | Consumer that would use it | Value |
 |---|---|---|
-| `mtmd_helper_gen_audio` stream mode + `flush()`, `mtmd_gen_state` | `llamacpp_swift` + `SpeechHelper` | Would make Soprano 80M, Qwen3-TTS and Pocket TTS GGUFs actually speak in the app |
-| `mtmd_caps.gen_audio` | GGUF import (`libs/GGUFileStructure.swift` / ModelManager) | Detect a TTS-only mmproj and stop offering it as a chat vision/audio projector |
-| `mtmd_audio_stream_get_n_rows(_flushed)` | Live ASR (Meetings) | Completes the Voxtral Realtime streaming path |
-| LoRA on `prism.hadamard` weights | `llamacpp_swift` LoRA / FineTune | Adapters on Bonsai models |
+| `mtmd_get_video_config()` + `mtmd_video_template` | `LLaMa_MModal.createBitmapsFromVideo` | Sample fps / frame count / frame size the model wants (LFM3 wants 2 fps, frame pairs) instead of our fixed ≤512 px sampling |
+| `mtmd_helper_get_capabilities()` | bridge `LLaMa_MModal` / `GGUFileStructure.projectorRole` | One authoritative chat/vision/audio/audio_gen answer after load, replacing metadata heuristics |
+| LFM3-Audio / Omni speech output (`mtmd_helper_gen_audio` with `n_past`, `out_mode`, `voice`, text/audio interleave) | `SpeechHelper` / voice chat | On-device speech-to-speech with a 2B model |
+| `mtmd_audio_stream` with an "asr" prompt + `audio_stream_get_logit_bias` | Meetings live ASR | LFM3-Audio live transcription |
+| LiquidAI d1 decision heads (`/v1/systemone`) | `libs/decision/` (Laya) | Local typed-decision probabilities from a 600M–2B GGUF |
+| `GGML_TYPE_F8_E4M3` | Catalogue | FP8 checkpoints (mostly large models; low iOS value) |
+| `mtmd_gen_inp.penalty_repeat` | TTS gen path | Fewer repeated codes in generated speech |
 
 ---
 
 ## Verification (so far)
 
-- Merge: 0 conflicts; marker inventory identical; both-sides audit 0 missing.
-- Quick gate `Ternary-Bonsai-1.7B-PQ2_0` (`--force-build`): 1 passed, 0 failed.
-- `GGUFTypeParityTests`: PASSED (4 tests).
+- Merge: 6 conflicts resolved keep-both; marker inventory identical; clang `-fsyntax-only` on 4 touched C/C++
+  files 0 errors; gguf-py constants import ok.
+- Quick gate `Ternary-Bonsai-1.7B-PQ2_0`: PASS.
 - `build-xcframework-ios.sh`: running at the time of writing (`p5-xcframework.log`).
-- Full regression sweep and tool-call probe: pending (P10).
+- `GGUFTypeParityTests`, `VideoFrameMtmdTests`, `GGUFVisionModelTests`, full regression sweep and tool-call
+  probe: pending (P10). Device-only behaviour (iOS Metal, memory) not verifiable on macOS.
 
 ---
 
 ## Action Items
 
-1. **REQUIRED**: xcframework build must finish clean and contain the two new `clip_graph_*` symbols.
-2. **Recommended**: full GGUF regression against `baseline-b11716.json`, looking closely at LFM2.5-VL,
-   Qwen3.5 vision, dots.ocr and Ministral-3 replies.
-3. **Recommended**: no session-cache invalidation needed (versions unchanged).
+1. **REQUIRED**: xcframework build clean, with the `clip_graph_lfm3*` symbols present.
+2. **REQUIRED**: app build with the bridge fix (`mtmd_bitmap_set_is_video` must exist in the new headers) and
+   `GGUFTypeParityTests` with the new `f8_e4m3` case.
+3. **Recommended**: `VideoFrameMtmdTests` + `GGUFVisionModelTests` (`TEST_TIMEOUT_SECS=1200`); full GGUF regression
+   against the P1 baseline, looking at the Bonsai PQ2_0 / PTQ1_0 rows.
+4. **Not needed**: session-cache invalidation (versions unchanged).
