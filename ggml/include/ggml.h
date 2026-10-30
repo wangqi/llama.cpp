@@ -381,6 +381,8 @@ extern "C" {
     GGML_API void        ggml_fp32_to_bf16_row_ref(const float *, ggml_bf16_t *, int64_t);
     GGML_API void        ggml_fp32_to_bf16_row(const float *, ggml_bf16_t *, int64_t);
 
+    typedef struct { uint8_t bits; } ggml_fp8_e4m3_t;
+
     struct ggml_object;
     struct ggml_context;
     struct ggml_cgraph;
@@ -430,8 +432,10 @@ extern "C" {
         GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
         GGML_TYPE_Q1_0    = 41,
         GGML_TYPE_Q2_0    = 42,
+        GGML_TYPE_F8_E4M3 = 43,
         // Prism-private Q2_0 at group size 128 (upstream Q2_0 is group 64). High id so it
-        // slots above upstream types; type_traits is sized to COUNT (143) with 43..141 unused.
+        // slots above upstream types; type_traits is sized to COUNT (144) with 44..141 unused.
+        // upstream b12015 added F8_E4M3 = 43; PrismML ids stay high // wangqi modified 2026-10-30
         GGML_TYPE_PQ2_0 = 142,
         GGML_TYPE_PTQ1_0 = 143, // Prism-private ternary, group 128
         GGML_TYPE_COUNT   = 144,
@@ -490,6 +494,8 @@ extern "C" {
         GGML_FTYPE_MOSTLY_NVFP4   = 26, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q1_0    = 27, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q2_0    = 28, // except 1d tensors
+        GGML_FTYPE_MOSTLY_F8_E4M3 = 29, // except 1d tensors
+        // PrismML ftypes kept beside upstream's F8_E4M3 // wangqi modified 2026-10-30
         GGML_FTYPE_MOSTLY_PQ2_0 = 128, // except 1d tensors (Prism-private group-128 Q2_0)
         GGML_FTYPE_MOSTLY_PTQ1_0 = 129, // except 1d tensors (Prism-private group-128 ternary)
     };

@@ -211,6 +211,12 @@ copy_mtmd_files() {
     # wangqi modified 2026-10-24
     cp -fp "tools/mtmd/models/sensenova-u1.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/soprano.cpp" src/clip-models/
+    # Added new encoders from the b12015 upgrade: LFM3-VL vision and LFM3-Audio (encoder + generator);
+    # clip.cpp constructs their clip_graph_* classes, so omitting them is an undefined-symbol link error.
+    # wangqi modified 2026-10-30
+    cp -fp "tools/mtmd/models/lfm3vl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/lfm3a.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/lfm3a-gen.cpp" src/clip-models/
     # Patch clip.cpp to use clip-models/ instead of models/
     sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
     # ============================================================================
