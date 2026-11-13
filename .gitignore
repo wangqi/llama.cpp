@@ -173,4 +173,11 @@ src/clip-models/
 src/mtmd-image.cpp
 src/mtmd-image.h
 src/mtmd-internal.h
+src/mtmd-model.cpp
+src/mtmd-model.h
+src/mtmd-graph.cpp
+src/mtmd-graph.h
+src/mtmd-subcontext.cpp
+src/mtmd-subcontext.h
+src/mtmd-impl.h
 src/hash/

@@ -72,6 +72,10 @@ copy_mtmd_files() {
     # struct names. Wipe the directory before each refresh.
     rm -rf src/clip-models
     rm -f src/clip.cpp src/clip.h src/clip-impl.h src/clip-graph.h src/clip-model.h
+    # upstream #31865 (b12361 merge) renamed the clip sources to mtmd-model / mtmd-graph /
+    # mtmd-impl and added mtmd-subcontext. wangqi modified 2026-11-13
+    rm -f src/mtmd-model.cpp src/mtmd-model.h src/mtmd-graph.cpp src/mtmd-graph.h
+    rm -f src/mtmd-subcontext.cpp src/mtmd-subcontext.h src/mtmd-impl.h
     rm -f src/mtmd.cpp src/mtmd.h src/mtmd-audio.cpp src/mtmd-audio.h
     rm -f src/mtmd-helper.cpp src/mtmd-helper.h src/mtmd-image.cpp src/mtmd-image.h
     # wangqi 2026-08-10: mtmd-helper was split in b10333 (PR #26254, Qwen3-TTS)
@@ -93,13 +97,16 @@ copy_mtmd_files() {
     mkdir -p src/hash
     cp -Rp vendor/hash/. src/hash/
     rm -f src/hash/CMakeLists.txt
-    # Core CLIP files
-    cp -fp "tools/mtmd/clip.h" src/
-    cp -fp "tools/mtmd/clip-impl.h" src/
-    cp -fp "tools/mtmd/clip.cpp" src/
-    # NEW: CLIP refactored headers (added in upstream after b7332)
-    cp -fp "tools/mtmd/clip-graph.h" src/
-    cp -fp "tools/mtmd/clip-model.h" src/
+    # Core model / graph files. Upstream #31865 (b12361 merge) removed clip.cpp, clip.h,
+    # clip-impl.h, clip-graph.h and clip-model.h and consolidated them into the mtmd-* files below.
+    # wangqi modified 2026-11-13
+    cp -fp "tools/mtmd/mtmd-impl.h" src/
+    cp -fp "tools/mtmd/mtmd-model.h" src/
+    cp -fp "tools/mtmd/mtmd-model.cpp" src/
+    cp -fp "tools/mtmd/mtmd-graph.h" src/
+    cp -fp "tools/mtmd/mtmd-graph.cpp" src/
+    cp -fp "tools/mtmd/mtmd-subcontext.h" src/
+    cp -fp "tools/mtmd/mtmd-subcontext.cpp" src/
     # Core mtmd files
     cp -fp "tools/mtmd/mtmd.h" src/
     cp -fp "tools/mtmd/mtmd.cpp" src/
@@ -217,8 +224,22 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/lfm3vl.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/lfm3a.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/lfm3a-gen.cpp" src/clip-models/
-    # Patch clip.cpp to use clip-models/ instead of models/
-    sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' src/clip.cpp
+    # Added new encoders from the b12361 upgrade: Chatterbox TTS (#30993), Drama-3 TTS (#31613),
+    # MageVL (#31819), Nemotron 3.5 Transcribe (#31471); mtmd-model.cpp / mtmd-graph.cpp construct
+    # their graphs, so omitting one is an undefined-symbol link error.
+    # wangqi modified 2026-11-13
+    cp -fp "tools/mtmd/models/chatterbox-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/chatterbox-spkenc.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/drama3-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/magevl.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/nemotron-transcribe.cpp" src/clip-models/
+    # Patch every source that includes the encoder header to use clip-models/ instead of models/.
+    # Since upstream #31865 that is four files, not clip.cpp alone; unpatched, "models/models.h"
+    # resolves to the llama core src/models/models.h and the build fails on missing clip types.
+    # wangqi modified 2026-11-13
+    for f in src/mtmd.cpp src/mtmd-model.cpp src/mtmd-graph.cpp src/mtmd-subcontext.cpp; do
+        sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' "$f"
+    done
     # ============================================================================
     # NOTE: src/CMakeLists.txt now uses file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")
     # since the b8843 merge conflict resolution. No sed patching needed — all files
@@ -338,7 +359,8 @@ setup_framework_structure() {
     cp ggml/include/ggml-opt.h     ${header_path}
     cp ggml/include/gguf.h         ${header_path}
     # wangqi
-    cp tools/mtmd/clip.h           ${header_path}
+    # clip.h was removed upstream in #31865 and was never exposed in the module map
+    # wangqi modified 2026-11-13
     cp tools/mtmd/mtmd.h           ${header_path}
     cp src/mtmd-helper.h           ${header_path}
 

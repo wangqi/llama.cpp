@@ -50,7 +50,12 @@ add_library(llama
             ${LLAMA_CORE_SOURCES}
             unicode.h
             ${LLAMA_MODELS_SOURCES}
-            clip.cpp
+            # upstream #31865 (b12361 merge) removed clip.cpp / clip.h and split the code into
+            # mtmd-model.cpp, mtmd-subcontext.cpp and mtmd-graph.cpp
+            # wangqi modified 2026-11-13
+            mtmd-model.cpp
+            mtmd-subcontext.cpp
+            mtmd-graph.cpp
             mtmd.cpp
             mtmd-audio.cpp
             mtmd-image.cpp
@@ -93,7 +98,9 @@ set_source_files_properties(${LLAMA_CORE_SOURCES} ../include/llama.h unicode.h
 # file-local statics. Keep every source this fork adds out of the unity batches.
 # wangqi modified 2026-09-18
 set_source_files_properties(
-    clip.cpp
+    mtmd-model.cpp
+    mtmd-subcontext.cpp
+    mtmd-graph.cpp
     mtmd.cpp
     mtmd-audio.cpp
     mtmd-image.cpp
@@ -115,7 +122,8 @@ target_include_directories(llama PRIVATE hash)
 target_include_directories(llama PUBLIC ../include)
 target_compile_features   (llama PRIVATE cxx_std_17) # don't bump
 
-target_link_libraries(llama PUBLIC ggml)
+find_package(Threads REQUIRED)
+target_link_libraries(llama PUBLIC ggml PRIVATE Threads::Threads)
 
 if (BUILD_SHARED_LIBS)
     set_target_properties(llama PROPERTIES POSITION_INDEPENDENT_CODE ON)
