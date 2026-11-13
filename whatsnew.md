@@ -272,8 +272,8 @@ BoringSSL, LibreSSL bumps are server-only, not in the xcframework.
   template, so the row reaches prod only with this binary.
 - **Rejected after test** `Mage-VL-Cowork-Q4_K_M` (user approved the candidate): generate + vision PASS, tool-call
   FAIL with schema-echo arguments (`{"arguments": {"properties": {...}}}`) and a looping `<think>` that replays
-  trajectory-training text. Mirror files (GGUF + mmproj) left in place for a later try with Mage's native action
-  format.
+  trajectory-training text. The user removed the GGUF + mmproj from the mirror and the local volume on
+  2026-11-13 (mirror commit 015572b).
 - Chatterbox Turbo / Multilingual: decision for the user (needs an mtmd audio-generation driver + a speaker).
 
 ## Action Items
