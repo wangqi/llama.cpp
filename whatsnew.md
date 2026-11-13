@@ -244,14 +244,37 @@ BoringSSL, LibreSSL bumps are server-only, not in the xcframework.
 | `moe_cache_size` / `moe_cache_cpu_share` | `llama_context_params` | Desktop expert offload; not relevant on iOS |
 | Metis-1.6 Praxis thinking toggle | `ai/thinking/` level → template flag | Small reasoning model with thinking off/on |
 
-## Verification (so far)
-- P3 quick gate: Ternary-Bonsai-1.7B-PQ2_0 generate PASS (old build pipeline + new sources).
-- P7 static checks: every `llama_*` / `mtmd_*` / `ggml_*` / `gguf_*` identifier in the bridge's compiled
-  sources, the four app consumer paths, `apps/keyboard/KeyboardAudioEngine.swift` and testcases importing
-  llama checked against the new headers — none missing except comment / Swift-local names. `MacCommandLine`
-  had 3 removed calls (fixed). No compile run (xcframework building).
-- Pending: xcframework build, bridge + app builds, P10 regression, `GGUFTypeParityTests`, `ToolCallReplayTests`,
-  GGUF vision / video suites (macOS host only). Device-only: PrismML `n_cb` candidate, `vm_allocate` memory shape.
+## Verification
+- P3 quick gate: Ternary-Bonsai-1.7B-PQ2_0 generate PASS.
+- P5: xcframework built (iOS, iOS sim, macOS, Mac Catalyst); encoder copy list equals `tools/mtmd/models/`;
+  `GGUFTypeParityTests` PASS.
+- P10 generate (`--scan-local`, final run on swift-jinja `225f0f0`): **87 passed / 1 failed / 0 skipped of 88**
+  (`20261113-142959`) vs baseline 85 / 1 / 0 of 86 (`20261101-091121`, ab9aa10a9). No REGRESSED.
+  Standing FAIL `PaddleOCR-VL-1.6-Q4_K_M`: an uncatalogued local file picked up by `--scan-local`; the OCR model
+  emits EOS on the text-only probe (failed identically on the baseline). The shipped `PaddleOCR-VL-1.6` (Q8_0) and
+  `-1.5` rows PASS.
+- P10 tool-call: **31 passed / 0 failed / 12 skipped of 43** (`20261113-143818`) vs baseline 29 / 0 / 13 of 42.
+  Fixture findings: LFM2.5-VL-450M now emits `offset=10` (was `-10`, its expectation reason) and PASSes;
+  LFM2-8B-A1B now ends its reply in a tool call; SmolLM3 only the prompt date moved.
+- Unit suites (iOS sim, slot 9): ToolCallReplayTests, CoreAIToolCallFallbackTests, OCRChatTemplateTests,
+  OCREngineCatalogTests, GGUFTypeParityTests, GGUFProjectorRoleTests, GGUFImportCoordinatorTests,
+  GGUFRepoCatalogTests, DownloadManagerGGUFClipRecordTests: all PASS.
+- macOS host: GGUFVisionModelTests + VideoFrameMtmdTests + Flux2PromptEncoderTests: 24 tests, 0 failures,
+  1 skipped (Youtu-VL-4B mmproj absent, standing). Both app schemes build.
+- Device-only, not verified: PrismML `6447906bf` (`n_cb` 8 on iOS), `vm_allocate` host-buffer memory shape,
+  context shift past `n_ctx` on a device.
+
+## Catalogue outcome (P8)
+- **Added** `Metis-1.6-Praxis-Q4_K_M` (Reasoning, badge 3.4.3, all four tiers, test synced; mirror
+  `flyingfishinwater/good_and_small_models`). Its template uses `{% for call in message.tool_calls %}`; our
+  swift-jinja treated `call` as a keyword. Fixed in swift-jinja `225f0f0` (branch `tag-20261113`): `call`,
+  `filter`, `macro`, `generation` accepted as names, as in Jinja2. Older app binaries cannot render this model's
+  template, so the row reaches prod only with this binary.
+- **Rejected after test** `Mage-VL-Cowork-Q4_K_M` (user approved the candidate): generate + vision PASS, tool-call
+  FAIL with schema-echo arguments (`{"arguments": {"properties": {...}}}`) and a looping `<think>` that replays
+  trajectory-training text. Mirror files (GGUF + mmproj) left in place for a later try with Mage's native action
+  format.
+- Chatterbox Turbo / Multilingual: decision for the user (needs an mtmd audio-generation driver + a speaker).
 
 ## Action Items
 
