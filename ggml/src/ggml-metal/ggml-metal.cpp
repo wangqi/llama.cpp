@@ -9,6 +9,11 @@
 #include "ggml-metal-ops.h"
 #include "ggml-metal-tuning.h"
 
+// port PrismML 6447906bf: TARGET_OS_IPHONE for the iOS n_cb default // wangqi modified 2026-11-13
+#include <TargetConditionals.h>
+
+// strtol for the GGML_METAL_N_CB test seam // wangqi modified 2026-11-13
+#include <cstdlib>
 #include <mutex>
 #include <string>
 
@@ -649,12 +654,47 @@ static void ggml_backend_metal_graph_optimize(ggml_backend_t backend, ggml_cgrap
     ggml_metal_graph_optimize(ctx, cgraph);
 }
 
+// port PrismML 6447906bf: iOS can stop a GPU command buffer that runs for more than a few seconds.
+// Use more, shorter command buffers there so large prompt batches stay under that limit. // wangqi modified 2026-11-13
+#if TARGET_OS_IPHONE
+#define GGML_METAL_DEFAULT_N_CB 8
+#else
+#define GGML_METAL_DEFAULT_N_CB 1
+#endif
+
 static void ggml_backend_metal_set_n_cb(ggml_backend_t backend, int n_cb) {
     GGML_ASSERT(ggml_backend_is_metal(backend));
 
     ggml_metal_t ctx = (ggml_metal_t)backend->context;
 
     ggml_metal_set_n_cb(ctx, n_cb);
+}
+
+// fork-only test seam: GGML_METAL_N_CB=<1..8> overrides GGML_METAL_DEFAULT_N_CB so one build can
+// compare command-buffer counts on device; 8 matches GGML_METAL_MAX_COMMAND_BUFFERS in
+// ggml-metal-context.m, the cap ggml_metal_set_n_cb applies. // wangqi modified 2026-11-13
+#define GGML_METAL_N_CB_ENV_MAX 8
+
+static int ggml_backend_metal_resolve_n_cb(void) {
+    int n_cb = GGML_METAL_DEFAULT_N_CB;
+
+    const char * env = getenv("GGML_METAL_N_CB");
+    if (env != nullptr && env[0] != '\0') {
+        char * end = nullptr;
+        const long v = strtol(env, &end, 10);
+        if (end == env || *end != '\0' || v < 1) {
+            GGML_LOG_WARN("%s: ignoring invalid GGML_METAL_N_CB='%s' (expected a positive integer), using %d\n", __func__, env, n_cb);
+        } else if (v > GGML_METAL_N_CB_ENV_MAX) {
+            n_cb = GGML_METAL_N_CB_ENV_MAX;
+            GGML_LOG_WARN("%s: GGML_METAL_N_CB=%ld above max, clamped to %d\n", __func__, v, n_cb);
+        } else {
+            n_cb = (int) v;
+        }
+    }
+
+    GGML_LOG_INFO("%s: n_cb = %d (default %d, GGML_METAL_N_CB=%s)\n", __func__, n_cb, GGML_METAL_DEFAULT_N_CB, env ? env : "unset");
+
+    return n_cb;
 }
 
 static ggml_backend_i ggml_backend_metal_i = {
@@ -700,7 +740,8 @@ ggml_backend_t ggml_backend_metal_init(void) {
         /* .context   = */ ctx,
     };
 
-    ggml_backend_metal_set_n_cb(backend, 1);
+    // port PrismML 6447906bf + GGML_METAL_N_CB test seam // wangqi modified 2026-11-13
+    ggml_backend_metal_set_n_cb(backend, ggml_backend_metal_resolve_n_cb());
 
     return backend;
 }
@@ -795,7 +836,8 @@ static ggml_backend_t ggml_backend_metal_device_init_backend(ggml_backend_dev_t 
         /* .context   = */ ctx,
     };
 
-    ggml_backend_metal_set_n_cb(backend, 1);
+    // port PrismML 6447906bf + GGML_METAL_N_CB test seam // wangqi modified 2026-11-13
+    ggml_backend_metal_set_n_cb(backend, ggml_backend_metal_resolve_n_cb());
 
     return backend;
 
