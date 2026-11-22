@@ -233,6 +233,25 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/drama3-gen.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/magevl.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/nemotron-transcribe.cpp" src/clip-models/
+    # wangqi 2026-11-22: Added new encoders from b12632 upgrade
+    # Inkling 2 vision (PR #32217), VibeVoice ASR (PR #32329), Fish S2 generation + speaker encoder
+    # (PRs #32330/#32586), Kokoro (PR #32413), Tiny-Voca (PR #32427), Music3 / YuE2 generation and the
+    # snake VAE (PR #32435), VoxCPM2 generation + speaker encoder (PR #32443), Moshi/Hibiki (PR #32491),
+    # Zonos3 generation + speaker encoder (PR #32020)
+    cp -fp "tools/mtmd/models/inkling2v.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/vibevoice-asr.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/fish-s2-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/fish-s2-spkenc.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/kokoro.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/tiny-voca.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/music3-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/yue2-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/snake-vae.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/voxcpm2-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/voxcpm2-spkenc.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/moshi.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/zonos3-gen.cpp" src/clip-models/
+    cp -fp "tools/mtmd/models/zonos3-spkenc.cpp" src/clip-models/
     # Patch every source that includes the encoder header to use clip-models/ instead of models/.
     # Since upstream #31865 that is four files, not clip.cpp alone; unpatched, "models/models.h"
     # resolves to the llama core src/models/models.h and the build fails on missing clip types.
