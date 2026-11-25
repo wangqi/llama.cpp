@@ -499,11 +499,16 @@ extern "C" int32_t lab_spec_step(struct lab_spec * spec, struct llama_context * 
 
     llama_pos pos = n_past;
     int restores = 0;
+    // review fix E-M1: count the first pass, not the forced re-decode // wangqi modified 2026-11-25
+    // a pass that re-decodes the accepted drafts after a checkpoint restore was counted on its first pass, so it
+    // does not count again (the app's acceptance kill switch reads these stats)
+    bool redecode = false;
 
     try {
         while (true) {
             // speculative-simple.cpp:175-224
-            if (draft.empty()) {
+            // review fix E-M2: a re-decode may hold no accepted draft; it never drafts // wangqi modified 2026-11-25
+            if (!redecode) {
                 ckpt.update_pos(
                         prompt_tgt.size(),
                         llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), LAB_SPEC_SEQ),
@@ -582,11 +587,18 @@ extern "C" int32_t lab_spec_step(struct lab_spec * spec, struct llama_context * 
             llama_tokens ids;
             ids.reserve(n_draft + 1);
             size_t i = 0;
+            size_t n_match = 0;
             for (; i < n_draft; ++i) {
                 const llama_token id = llama_sampler_sample(chain, ctx_tgt, (int32_t) i);
                 ids.push_back(id);
-                // no draft token after an EOG: it would stay in the context without being output
-                if (draft[i] != id || (llama_vocab_is_eog(vocab, id) && i + 1 < n_draft)) {
+                if (draft[i] != id) {
+                    break;
+                }
+                n_match++;
+                // review fix E-M2: stop on any EOG, incl. the last draft // wangqi modified 2026-11-25
+                // an EOG ends the step as a partial accept: nothing is sampled or decoded after it, so it is the
+                // step's last token and never sits in the target KV (a hybrid target cannot trim a token after it)
+                if (llama_vocab_is_eog(vocab, id)) {
                     break;
                 }
             }
@@ -604,7 +616,17 @@ extern "C" int32_t lab_spec_step(struct lab_spec * spec, struct llama_context * 
                     return LAB_SPEC_ERR_CKPT;
                 }
                 spec->stats.n_restores++;
+                // review fix E-M1, E-M2: count the first pass; re-decode only the accepted drafts
+                // wangqi modified 2026-11-25
+                if (!redecode) {
+                    spec->stats.n_drafted  += (int64_t) n_draft;
+                    spec->stats.n_accepted += (int64_t) n_match;
+                }
+                redecode = true;
 
+                // the last token (the correction, or the EOG the run stopped on) comes back as the re-decode's
+                // bonus sample from the restored chain and is never decoded
+                ids.pop_back();
                 draft = std::move(ids);
 
                 if (!ckpt.load_tgt(ctx_tgt, LAB_SPEC_SEQ, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY)) {
@@ -648,8 +670,11 @@ extern "C" int32_t lab_spec_step(struct lab_spec * spec, struct llama_context * 
             common_speculative_accept(spec->spec, LAB_SPEC_SEQ, (uint16_t) (ids.size() - 1));
 
             spec->stats.n_steps++;
-            spec->stats.n_drafted  += (int64_t) n_draft;
-            spec->stats.n_accepted += (int64_t) ids.size() - 1;
+            // review fix E-M1: a forced re-decode was counted on its first pass // wangqi modified 2026-11-25
+            if (!redecode) {
+                spec->stats.n_drafted  += (int64_t) n_draft;
+                spec->stats.n_accepted += (int64_t) n_match;
+            }
 
             for (size_t k = 0; k < ids.size(); ++k) {
                 prompt_tgt.push_back(id_last);
