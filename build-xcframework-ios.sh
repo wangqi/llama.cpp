@@ -62,6 +62,9 @@ COMMON_CMAKE_ARGS=(
     # processes, so turn it off everywhere. subproc.h has an #else stub, so subproc.cpp still
     # compiles; this also keeps MTMD_VIDEO (ffmpeg) off, which upstream ties to LLAMA_SUBPROCESS.
     -DLLAMA_SUBPROCESS=OFF
+    # app bridge: a plain C shim over libcommon (TTS / ASR chat-template prompts) linked into the framework
+    # wangqi modified 2026-11-24
+    -DLLAMA_APP_BRIDGE=ON
 )
 
 copy_mtmd_files() {
@@ -382,6 +385,8 @@ setup_framework_structure() {
     # wangqi modified 2026-11-13
     cp tools/mtmd/mtmd.h           ${header_path}
     cp src/mtmd-helper.h           ${header_path}
+    # app bridge C header (lab_* entry points) # wangqi modified 2026-11-24
+    cp tools/app-bridge/llama-app-bridge.h ${header_path}
 
     # Create module map (common for all platforms)
     # clip.h is marked "Internal header, to be used by mtmd only" and uses
@@ -389,6 +394,7 @@ setup_framework_structure() {
     # breaks Clang dependency scanning for any Swift caller because the
     # framework module isn't declared `requires cplusplus`. Drop clip.h here.
     # wangqi modified 2026-05-22
+    # llama-app-bridge.h added to the module (lab_* entry points) # wangqi modified 2026-11-24
     cat > ${module_path}module.modulemap << EOF
 framework module llama {
     header "llama.h"
@@ -402,6 +408,7 @@ framework module llama {
     header "gguf.h"
     header "mtmd.h"
     header "mtmd-helper.h"
+    header "llama-app-bridge.h"
 
     link "c++"
     link framework "Accelerate"
@@ -529,7 +536,31 @@ combine_static_libraries() {
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
+        # app bridge: force-loaded so every lab_* entry point is exported # wangqi modified 2026-11-24
+        "${base_dir}/${build_dir}/tools/app-bridge/${release_dir}/libllama-app-bridge.a"
     )
+
+    # libcommon for the app bridge: linked WITHOUT -force_load and with -dead_strip, so only the objects the
+    # bridge references reach the dylib (plan 2.9: +2.2 MB stripped on iOS, no httplib symbol)
+    # wangqi modified 2026-11-24
+    local common_libs=(
+        "${base_dir}/${build_dir}/common/${release_dir}/libllama-common.a"
+        "${base_dir}/${build_dir}/common/${release_dir}/libllama-common-base.a"
+    )
+    for lib in "${libs[@]}" "${common_libs[@]}"; do
+        if [ ! -f "$lib" ]; then
+            echo "ERROR: missing static library $lib"
+            exit 1
+        fi
+    done
+    # libcpp-httplib.a is optional: the shim's objects never reference it (P0a: links with no undefined
+    # symbol without it), and the Xcode generator leaves it unbuilt for the simulator
+    local httplib="${base_dir}/${build_dir}/vendor/cpp-httplib/${release_dir}/libcpp-httplib.a"
+    if [ -f "$httplib" ]; then
+        common_libs+=("$httplib")
+    else
+        echo "Note: $httplib not built, linking without it"
+    fi
 
     # Create temporary directory for processing
     local temp_dir="${base_dir}/${build_dir}/temp"
@@ -640,11 +671,15 @@ combine_static_libraries() {
         xcrun lipo -create "${catalyst_arm64_lib}" "${catalyst_x86_64_lib}" -output "${base_dir}/${output_lib}"
     else
         # Standard build for other platforms
+        # libcommon archives after the force-loaded combined.a, with -dead_strip (app bridge)
+        # wangqi modified 2026-11-24
         xcrun -sdk $sdk clang++ -dynamiclib \
             -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
             $arch_flags \
             $min_version_flag \
             -Wl,-force_load,"${temp_dir}/combined.a" \
+            "${common_libs[@]}" \
+            -Wl,-dead_strip \
             -framework Foundation -framework Metal -framework Accelerate \
             -install_name "$install_name" \
             -o "${base_dir}/${output_lib}"
@@ -764,107 +799,108 @@ cmake -B build-macos -G Xcode \
    -S .
 cmake --build build-macos --config Release -- -quiet
 
-echo "Building for Mac Catalyst..."
-# Mac Catalyst requires special handling - use Unix Makefiles and set target at build time
+# Mac Catalyst slice dropped: no app target supports Catalyst, and the slice does not link the app bridge # wangqi modified 2026-11-24
+# echo "Building for Mac Catalyst..."
+# # Mac Catalyst requires special handling - use Unix Makefiles and set target at build time
 
-# Build for arm64 Catalyst
-export CFLAGS="${COMMON_C_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
-export CXXFLAGS="${COMMON_CXX_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
-export ASMFLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# # Build for arm64 Catalyst
+# export CFLAGS="${COMMON_C_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# export CXXFLAGS="${COMMON_CXX_FLAGS} -target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# export ASMFLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
 
-cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_SYSROOT=macosx \
-    -DCMAKE_OSX_ARCHITECTURES="arm64" \
-    -DCMAKE_ASM_FLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
-    -DCMAKE_CODE_SIGNING_REQUIRED=NO \
-    -DCMAKE_CODE_SIGN_IDENTITY="" \
-    -DCMAKE_CODE_SIGNING_ALLOWED=NO \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DLLAMA_BUILD_EXAMPLES=OFF \
-    -DLLAMA_BUILD_TOOLS=OFF \
-    -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_SERVER=OFF \
-    -DLLAMA_BUILD_APP=OFF \
-    -DGGML_METAL_EMBED_LIBRARY=ON \
-    -DGGML_BLAS_DEFAULT=ON \
-    -DGGML_METAL=ON \
-    -DGGML_NATIVE=OFF \
-    -DGGML_OPENMP=OFF \
-    -DLLAMA_OPENSSL=OFF \
-    -DLLAMA_SUBPROCESS=OFF \
-    -S .
-cmake --build build-maccatalyst-arm64 --config Release
+# cmake -B build-maccatalyst-arm64 -G "Unix Makefiles" \
+#     -DCMAKE_BUILD_TYPE=Release \
+#     -DCMAKE_OSX_SYSROOT=macosx \
+#     -DCMAKE_OSX_ARCHITECTURES="arm64" \
+#     -DCMAKE_ASM_FLAGS="-target arm64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
+#     -DCMAKE_CODE_SIGNING_REQUIRED=NO \
+#     -DCMAKE_CODE_SIGN_IDENTITY="" \
+#     -DCMAKE_CODE_SIGNING_ALLOWED=NO \
+#     -DBUILD_SHARED_LIBS=OFF \
+#     -DLLAMA_BUILD_EXAMPLES=OFF \
+#     -DLLAMA_BUILD_TOOLS=OFF \
+#     -DLLAMA_BUILD_TESTS=OFF \
+#     -DLLAMA_BUILD_SERVER=OFF \
+#     -DLLAMA_BUILD_APP=OFF \
+#     -DGGML_METAL_EMBED_LIBRARY=ON \
+#     -DGGML_BLAS_DEFAULT=ON \
+#     -DGGML_METAL=ON \
+#     -DGGML_NATIVE=OFF \
+#     -DGGML_OPENMP=OFF \
+#     -DLLAMA_OPENSSL=OFF \
+#     -DLLAMA_SUBPROCESS=OFF \
+#     -S .
+# cmake --build build-maccatalyst-arm64 --config Release
 
-# Build for x86_64 Catalyst
-export CFLAGS="${COMMON_C_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
-export CXXFLAGS="${COMMON_CXX_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
-export ASMFLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# # Build for x86_64 Catalyst
+# export CFLAGS="${COMMON_C_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# export CXXFLAGS="${COMMON_CXX_FLAGS} -target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
+# export ASMFLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi"
 
-cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_SYSROOT=macosx \
-    -DCMAKE_OSX_ARCHITECTURES="x86_64" \
-    -DCMAKE_ASM_FLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
-    -DCMAKE_CODE_SIGNING_REQUIRED=NO \
-    -DCMAKE_CODE_SIGN_IDENTITY="" \
-    -DCMAKE_CODE_SIGNING_ALLOWED=NO \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DLLAMA_BUILD_EXAMPLES=OFF \
-    -DLLAMA_BUILD_TOOLS=OFF \
-    -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_SERVER=OFF \
-    -DLLAMA_BUILD_APP=OFF \
-    -DGGML_METAL_EMBED_LIBRARY=ON \
-    -DGGML_BLAS_DEFAULT=ON \
-    -DGGML_METAL=ON \
-    -DGGML_NATIVE=OFF \
-    -DGGML_OPENMP=OFF \
-    -DLLAMA_OPENSSL=OFF \
-    -DLLAMA_SUBPROCESS=OFF \
-    -S .
-cmake --build build-maccatalyst-x86_64 --config Release
+# cmake -B build-maccatalyst-x86_64 -G "Unix Makefiles" \
+#     -DCMAKE_BUILD_TYPE=Release \
+#     -DCMAKE_OSX_SYSROOT=macosx \
+#     -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+#     -DCMAKE_ASM_FLAGS="-target x86_64-apple-ios${IOS_MIN_OS_VERSION}-macabi" \
+#     -DCMAKE_CODE_SIGNING_REQUIRED=NO \
+#     -DCMAKE_CODE_SIGN_IDENTITY="" \
+#     -DCMAKE_CODE_SIGNING_ALLOWED=NO \
+#     -DBUILD_SHARED_LIBS=OFF \
+#     -DLLAMA_BUILD_EXAMPLES=OFF \
+#     -DLLAMA_BUILD_TOOLS=OFF \
+#     -DLLAMA_BUILD_TESTS=OFF \
+#     -DLLAMA_BUILD_SERVER=OFF \
+#     -DLLAMA_BUILD_APP=OFF \
+#     -DGGML_METAL_EMBED_LIBRARY=ON \
+#     -DGGML_BLAS_DEFAULT=ON \
+#     -DGGML_METAL=ON \
+#     -DGGML_NATIVE=OFF \
+#     -DGGML_OPENMP=OFF \
+#     -DLLAMA_OPENSSL=OFF \
+#     -DLLAMA_SUBPROCESS=OFF \
+#     -S .
+# cmake --build build-maccatalyst-x86_64 --config Release
 
-unset CFLAGS
-unset CXXFLAGS
-unset ASMFLAGS
+# unset CFLAGS
+# unset CXXFLAGS
+# unset ASMFLAGS
 
-# Combine the two architectures using lipo
-# Unix Makefiles puts libraries directly in src/ not src/Release/
-mkdir -p build-maccatalyst/src/Release
-mkdir -p build-maccatalyst/ggml/src/Release
-mkdir -p build-maccatalyst/ggml/src/ggml-metal/Release
-mkdir -p build-maccatalyst/ggml/src/ggml-blas/Release
+# # Combine the two architectures using lipo
+# # Unix Makefiles puts libraries directly in src/ not src/Release/
+# mkdir -p build-maccatalyst/src/Release
+# mkdir -p build-maccatalyst/ggml/src/Release
+# mkdir -p build-maccatalyst/ggml/src/ggml-metal/Release
+# mkdir -p build-maccatalyst/ggml/src/ggml-blas/Release
 
-lipo -create \
-    build-maccatalyst-arm64/src/libllama.a \
-    build-maccatalyst-x86_64/src/libllama.a \
-    -output build-maccatalyst/src/Release/libllama.a
+# lipo -create \
+#     build-maccatalyst-arm64/src/libllama.a \
+#     build-maccatalyst-x86_64/src/libllama.a \
+#     -output build-maccatalyst/src/Release/libllama.a
 
-lipo -create \
-    build-maccatalyst-arm64/ggml/src/libggml.a \
-    build-maccatalyst-x86_64/ggml/src/libggml.a \
-    -output build-maccatalyst/ggml/src/Release/libggml.a
+# lipo -create \
+#     build-maccatalyst-arm64/ggml/src/libggml.a \
+#     build-maccatalyst-x86_64/ggml/src/libggml.a \
+#     -output build-maccatalyst/ggml/src/Release/libggml.a
 
-lipo -create \
-    build-maccatalyst-arm64/ggml/src/libggml-base.a \
-    build-maccatalyst-x86_64/ggml/src/libggml-base.a \
-    -output build-maccatalyst/ggml/src/Release/libggml-base.a
+# lipo -create \
+#     build-maccatalyst-arm64/ggml/src/libggml-base.a \
+#     build-maccatalyst-x86_64/ggml/src/libggml-base.a \
+#     -output build-maccatalyst/ggml/src/Release/libggml-base.a
 
-lipo -create \
-    build-maccatalyst-arm64/ggml/src/libggml-cpu.a \
-    build-maccatalyst-x86_64/ggml/src/libggml-cpu.a \
-    -output build-maccatalyst/ggml/src/Release/libggml-cpu.a
+# lipo -create \
+#     build-maccatalyst-arm64/ggml/src/libggml-cpu.a \
+#     build-maccatalyst-x86_64/ggml/src/libggml-cpu.a \
+#     -output build-maccatalyst/ggml/src/Release/libggml-cpu.a
 
-lipo -create \
-    build-maccatalyst-arm64/ggml/src/ggml-metal/libggml-metal.a \
-    build-maccatalyst-x86_64/ggml/src/ggml-metal/libggml-metal.a \
-    -output build-maccatalyst/ggml/src/ggml-metal/Release/libggml-metal.a
+# lipo -create \
+#     build-maccatalyst-arm64/ggml/src/ggml-metal/libggml-metal.a \
+#     build-maccatalyst-x86_64/ggml/src/ggml-metal/libggml-metal.a \
+#     -output build-maccatalyst/ggml/src/ggml-metal/Release/libggml-metal.a
 
-lipo -create \
-    build-maccatalyst-arm64/ggml/src/ggml-blas/libggml-blas.a \
-    build-maccatalyst-x86_64/ggml/src/ggml-blas/libggml-blas.a \
-    -output build-maccatalyst/ggml/src/ggml-blas/Release/libggml-blas.a
+# lipo -create \
+#     build-maccatalyst-arm64/ggml/src/ggml-blas/libggml-blas.a \
+#     build-maccatalyst-x86_64/ggml/src/ggml-blas/libggml-blas.a \
+#     -output build-maccatalyst/ggml/src/ggml-blas/Release/libggml-blas.a
 
 # echo "Building for visionOS..."
 # cmake -B build-visionos -G Xcode \
@@ -926,7 +962,8 @@ echo "Setting up framework structures..."
 setup_framework_structure "build-ios-sim" ${IOS_MIN_OS_VERSION} "ios"
 setup_framework_structure "build-ios-device" ${IOS_MIN_OS_VERSION} "ios"
 setup_framework_structure "build-macos" ${MACOS_MIN_OS_VERSION} "macos"
-setup_framework_structure "build-maccatalyst" ${IOS_MIN_OS_VERSION} "maccatalyst"
+# Mac Catalyst slice dropped: no app target supports Catalyst, and the slice does not link the app bridge # wangqi modified 2026-11-24
+# setup_framework_structure "build-maccatalyst" ${IOS_MIN_OS_VERSION} "maccatalyst"
 #setup_framework_structure "build-visionos" ${VISIONOS_MIN_OS_VERSION} "visionos"
 #setup_framework_structure "build-visionos-sim" ${VISIONOS_MIN_OS_VERSION} "visionos"
 #setup_framework_structure "build-tvos-sim" ${TVOS_MIN_OS_VERSION} "tvos"
@@ -937,7 +974,8 @@ echo "Creating dynamic libraries from static libraries..."
 combine_static_libraries "build-ios-sim" "Release-iphonesimulator" "ios" "true"
 combine_static_libraries "build-ios-device" "Release-iphoneos" "ios" "false"
 combine_static_libraries "build-macos" "Release" "macos" "false"
-combine_static_libraries "build-maccatalyst" "Release" "maccatalyst" "false"
+# Mac Catalyst slice dropped: no app target supports Catalyst, and the slice does not link the app bridge # wangqi modified 2026-11-24
+# combine_static_libraries "build-maccatalyst" "Release" "maccatalyst" "false"
 #combine_static_libraries "build-visionos" "Release-xros" "visionos" "false"
 #combine_static_libraries "build-visionos-sim" "Release-xrsimulator" "visionos" "true"
 #combine_static_libraries "build-tvos-sim" "Release-appletvsimulator" "tvos" "true"
@@ -945,6 +983,10 @@ combine_static_libraries "build-maccatalyst" "Release" "maccatalyst" "false"
 
 # Create XCFramework with correct debug symbols paths
 echo "Creating XCFramework..."
+# Mac Catalyst slice dropped: no app target supports Catalyst, and the slice does not link the app bridge # wangqi modified 2026-11-24
+# (removed from both commands below:)
+#     -framework $(pwd)/build-maccatalyst/framework/llama.framework \
+#     -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
 echo xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-sim/dSYMs/llama.dSYM \
@@ -952,8 +994,6 @@ echo xcodebuild -create-xcframework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
     -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
-    -framework $(pwd)/build-maccatalyst/framework/llama.framework \
-    -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-sim/framework/llama.framework \
@@ -962,8 +1002,6 @@ xcodebuild -create-xcframework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
     -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
-    -framework $(pwd)/build-maccatalyst/framework/llama.framework \
-    -debug-symbols $(pwd)/build-maccatalyst/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
 # wangqi 2026-05-22: explicit success check. xcodebuild can occasionally report

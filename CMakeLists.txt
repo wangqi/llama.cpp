@@ -242,6 +242,17 @@ if (LLAMA_BUILD_COMMON)
     add_subdirectory(common)
 endif()
 
+# App bridge (fork): a plain C shim over libcommon (TTS / ASR chat-template prompts, TTS context set-up)
+# that build-xcframework-ios.sh links into llama.framework; needs libcommon, independent of LLAMA_BUILD_TOOLS
+# wangqi modified 2026-11-24
+option(LLAMA_APP_BRIDGE "llama: build the tools/app-bridge static library (needs LLAMA_BUILD_COMMON)" OFF)
+if (LLAMA_APP_BRIDGE)
+    if (NOT LLAMA_BUILD_COMMON)
+        message(FATAL_ERROR "LLAMA_APP_BRIDGE needs LLAMA_BUILD_COMMON=ON")
+    endif()
+    add_subdirectory(tools/app-bridge)
+endif()
+
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS AND NOT CMAKE_JS_VERSION)
     include(CTest)
     add_subdirectory(tests)
