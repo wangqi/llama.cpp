@@ -195,7 +195,11 @@ else()
     if (GGML_METAL_MACOSX_VERSION_MIN)
         message(STATUS "Adding  -mmacosx-version-min=${GGML_METAL_MACOSX_VERSION_MIN} flag to metal compilation")
         list   (APPEND XC_FLAGS -mmacosx-version-min=${GGML_METAL_MACOSX_VERSION_MIN})
-    elseif (NOT GGML_METAL_TARGET_OS STREQUAL "macos" AND CMAKE_OSX_DEPLOYMENT_TARGET)
+    # GGML_METAL_LIB_TARGETOS also pins macOS: with no flag the macOS metallib targets the SDK's OS (27.x, Metal 4.1)
+    # and would not load on older macOS; -mmacosx-version-min cannot be used because metal refuses it next to the
+    # tensor library's -mtargetos=macos26.0
+    # wangqi modified 2026-11-27
+    elseif ((NOT GGML_METAL_TARGET_OS STREQUAL "macos" OR GGML_METAL_LIB_TARGETOS) AND CMAKE_OSX_DEPLOYMENT_TARGET)
         message(STATUS "Adding  -mtargetos=${GGML_METAL_TARGET_OS}${CMAKE_OSX_DEPLOYMENT_TARGET}${METAL_TARGET_SIM} flag to metal compilation")
         list   (APPEND XC_FLAGS -mtargetos=${GGML_METAL_TARGET_OS}${CMAKE_OSX_DEPLOYMENT_TARGET}${METAL_TARGET_SIM})
     endif()
@@ -203,6 +207,14 @@ else()
     if (GGML_METAL_STD)
         message(STATUS "Adding  -std=${GGML_METAL_STD} flag to metal compilation")
         list   (APPEND XC_FLAGS -std=${GGML_METAL_STD})
+    endif()
+
+    # the embedded / source path defines GGML_METAL_HAS_BF16 at runtime on bf16-capable GPUs; a precompiled
+    # library must carry those kernels (needs Metal 3.1+, kernels/common.h drops them below that)
+    # wangqi modified 2026-11-27
+    if (GGML_METAL_LIB_BF16)
+        message(STATUS "Adding  -DGGML_METAL_HAS_BF16 flag to metal compilation")
+        list   (APPEND XC_FLAGS -DGGML_METAL_HAS_BF16)
     endif()
 
     # Compile each kernel source to .air, then link into default.metallib

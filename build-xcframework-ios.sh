@@ -6,8 +6,11 @@ set -euo pipefail
 
 #
 # Options
-IOS_MIN_OS_VERSION=16.4
-MACOS_MIN_OS_VERSION=13.3
+# raised from 16.4 / 13.3: the precompiled metallib is compiled for these OS versions, and its bf16 kernels need
+# Metal 3.1+ (iOS 17 / macOS 14); 18.0 / 15.0 give Metal 3.2. The app targets iOS 18.0+ and macOS 26.0+.
+# wangqi modified 2026-11-27
+IOS_MIN_OS_VERSION=18.0
+MACOS_MIN_OS_VERSION=15.0
 VISIONOS_MIN_OS_VERSION=1.0
 TVOS_MIN_OS_VERSION=16.4
 
@@ -21,7 +24,10 @@ LLAMA_BUILD_SERVER=OFF
 # needs build-info.h and fails the framework build; disable it.
 LLAMA_BUILD_APP=OFF
 GGML_METAL=ON
-GGML_METAL_EMBED_LIBRARY=ON
+# ship a precompiled default.metallib (+ ggml-tensor.metallib for M5 / A19 GPUs) inside llama.framework instead of
+# embedded Metal source: the device no longer compiles every shader on the first model load (#28163)
+# wangqi modified 2026-11-27
+GGML_METAL_EMBED_LIBRARY=OFF
 GGML_BLAS_DEFAULT=ON
 # wangqi 2026-08-10: GGML_METAL_USE_BF16 removed upstream (b10333, PR #26604). The ggml-metal
 # CMake option no longer exists, so passing it only produced an unused-variable warning.
@@ -47,6 +53,10 @@ COMMON_CMAKE_ARGS=(
     -DLLAMA_BUILD_SERVER=${LLAMA_BUILD_SERVER}
     -DLLAMA_BUILD_APP=${LLAMA_BUILD_APP}
     -DGGML_METAL_EMBED_LIBRARY=${GGML_METAL_EMBED_LIBRARY}
+    # precompiled metallib parity with the embedded path: bf16 kernels, and -mtargetos pinned to the deployment
+    # target on every slice (macOS included) # wangqi modified 2026-11-27
+    -DGGML_METAL_LIB_BF16=ON
+    -DGGML_METAL_LIB_TARGETOS=ON
     -DGGML_BLAS_DEFAULT=${GGML_BLAS_DEFAULT}
     -DGGML_METAL=${GGML_METAL}
     -DGGML_NATIVE=OFF
@@ -390,6 +400,21 @@ setup_framework_structure() {
     cp src/mtmd-helper.h           ${header_path}
     # app bridge C header (lab_* entry points) # wangqi modified 2026-11-24
     cp tools/app-bridge/llama-app-bridge.h ${header_path}
+
+    # precompiled Metal libraries: default.metallib and, with a 26+ SDK, ggml-tensor.metallib. ggml finds them with
+    # [NSBundle bundleForClass:GGMLMetalClass] pathForResource:, so they go where the bundle keeps resources
+    # (macOS: Versions/A/Resources, iOS: the flat framework root) # wangqi modified 2026-11-27
+    if [[ "$GGML_METAL_EMBED_LIBRARY" == "OFF" ]]; then
+        local metal_res_dir=${build_dir}/framework/${framework_name}.framework
+        if [[ "$platform" == "macos" ]]; then
+            metal_res_dir=${build_dir}/framework/${framework_name}.framework/Versions/A/Resources
+        fi
+        if [[ ! -f ${build_dir}/bin/default.metallib ]]; then
+            echo "ERROR: ${build_dir}/bin/default.metallib was not built"
+            exit 1
+        fi
+        cp ${build_dir}/bin/*.metallib ${metal_res_dir}/
+    fi
 
     # Create module map (common for all platforms)
     # clip.h is marked "Internal header, to be used by mtmd only" and uses
@@ -772,6 +797,7 @@ cmake -B build-ios-sim -G Xcode \
     -DIOS=ON \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_SYSROOT=iphonesimulator \
+    -DGGML_METAL_TARGET_OS=ios \
     -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
@@ -785,6 +811,7 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${IOS_MIN_OS_VERSION} \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_SYSROOT=iphoneos \
+    -DGGML_METAL_TARGET_OS=ios \
     -DCMAKE_OSX_ARCHITECTURES="arm64" \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
@@ -1014,5 +1041,16 @@ if [ ! -d "$(pwd)/build-apple/llama.xcframework/ios-arm64" ]; then
     exit 1
 fi
 echo "Verified: build-apple/llama.xcframework/ios-arm64 present"
+
+# every slice must ship the precompiled Metal library # wangqi modified 2026-11-27
+if [[ "$GGML_METAL_EMBED_LIBRARY" == "OFF" ]]; then
+    for slice in ios-arm64 ios-arm64_x86_64-simulator macos-arm64_x86_64; do
+        if [ -z "$(find "$(pwd)/build-apple/llama.xcframework/${slice}" -name default.metallib -print -quit)" ]; then
+            echo "ERROR: default.metallib missing from build-apple/llama.xcframework/${slice}"
+            exit 1
+        fi
+    done
+    echo "Verified: default.metallib present in every slice"
+fi
 
 echo "Done"
