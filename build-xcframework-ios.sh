@@ -255,6 +255,9 @@ copy_mtmd_files() {
     cp -fp "tools/mtmd/models/moshi.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/zonos3-gen.cpp" src/clip-models/
     cp -fp "tools/mtmd/models/zonos3-spkenc.cpp" src/clip-models/
+    # Added new encoder from the b12816 upgrade: HY-V4 vision; mtmd-model.cpp / mtmd-graph.cpp construct
+    # its graph, so omitting it is an undefined-symbol link error. wangqi modified 2026-11-27
+    cp -fp "tools/mtmd/models/hy-v4.cpp" src/clip-models/
     # Patch every source that includes the encoder header to use clip-models/ instead of models/.
     # Since upstream #31865 that is four files, not clip.cpp alone; unpatched, "models/models.h"
     # resolves to the llama core src/models/models.h and the build fails on missing clip types.
