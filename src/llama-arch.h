@@ -379,6 +379,11 @@ enum llm_kv {
     LLM_KV_HYPER_CONNECTION_EPSILON,
     LLM_KV_HYPER_CONNECTION_MAGNITUDE,
     LLM_KV_HYPER_CONNECTION_LOW_RANK,
+    // Raon-1 mini reasoning effort steering (ported from krafton-ai/llama.cpp b90ffc383) // wangqi modified 2026-11-27
+    LLM_KV_REASONING_EFFORT_NAMES,
+    LLM_KV_REASONING_EFFORT_ALPHA,
+    LLM_KV_REASONING_EFFORT_LAYERS,
+    LLM_KV_REASONING_EFFORT_DEFAULT,
     LLM_KV_HYPER_CONNECTION_SINGLE_PASS,
 
     LLM_KV_ENGRAM_PAD_TOKEN_ID,
@@ -788,6 +793,8 @@ enum llm_tensor {
     LLM_TENSOR_HC_FFN_FN,
     LLM_TENSOR_HC_FFN_BASE,
     LLM_TENSOR_HC_FFN_SCALE,
+    // Raon-1 mini reasoning effort steering vector // wangqi modified 2026-11-27
+    LLM_TENSOR_FFN_EFFORT_STEER,
     LLM_TENSOR_HC_ATTN_NORM,   // qwen4exp
     LLM_TENSOR_HC_ATTN_DOWN,   // qwen4exp
     LLM_TENSOR_HC_ATTN_UP,     // qwen4exp

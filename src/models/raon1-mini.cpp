@@ -4,6 +4,10 @@
 
 #include "llama-memory-recurrent.h"
 
+// Raon-1 mini reasoning effort steering // wangqi modified 2026-11-27
+#include <algorithm>
+#include <cmath>
+
 void llama_model_raon1_mini::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
     ml.get_key(LLM_KV_ATTENTION_KEY_LENGTH_MLA,    hparams.n_embd_head_k_mla_impl);
@@ -41,6 +45,45 @@ void llama_model_raon1_mini::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_HYPER_CONNECTION_MAGNITUDE,    hparams.hc_magnitude);
     ml.get_key(LLM_KV_ACTIVATION_SITU_BETA,          hparams.situ_beta);
     ml.get_key(LLM_KV_ACTIVATION_SITU_LINEAR_BETA,   hparams.situ_linear_beta);
+
+    // Raon-1 mini reasoning effort steering (ported from krafton-ai/llama.cpp b90ffc383): the GGUF names its
+    // efforts and their alphas, the steered layers and the default effort. Without a per-request effort API the
+    // default effort's alpha is applied to every token. A GGUF without these keys (the preview) is unsteered. // wangqi modified 2026-11-27
+    {
+        std::vector<float> effort_alpha;
+        if (ml.get_arr(LLM_KV_REASONING_EFFORT_ALPHA, effort_alpha, false)) {
+            std::vector<std::string> effort_names;
+            if (!ml.get_arr(LLM_KV_REASONING_EFFORT_NAMES, effort_names, false)) {
+                effort_names = { "low", "medium", "high" };
+            }
+            std::vector<uint32_t> effort_layers;
+            ml.get_arr(LLM_KV_REASONING_EFFORT_LAYERS, effort_layers, true);
+            if (effort_alpha.empty() || effort_names.size() != effort_alpha.size() || effort_layers.empty()) {
+                throw std::runtime_error("invalid Raon-1 mini hyperparameters: reasoning_effort needs named alphas and the steered layers");
+            }
+            for (float a : effort_alpha) {
+                if (!std::isfinite(a) || a < 0.0f) {
+                    throw std::runtime_error(format("invalid Raon-1 mini hyperparameters: reasoning_effort alpha %g", a));
+                }
+            }
+            std::string effort_default;
+            if (ml.get_key(LLM_KV_REASONING_EFFORT_DEFAULT, effort_default, false)) {
+                const auto it = std::find(effort_names.begin(), effort_names.end(), effort_default);
+                if (it == effort_names.end()) {
+                    throw std::runtime_error(format("invalid Raon-1 mini hyperparameters: reasoning_effort default '%s' is not an effort", effort_default.c_str()));
+                }
+                hparams.effort_alpha_default = effort_alpha[it - effort_names.begin()];
+            }
+            for (uint32_t il : effort_layers) {
+                if (il < hparams.n_layer_dense_lead || il >= hparams.n_layer()) {
+                    throw std::runtime_error(format("invalid Raon-1 mini hyperparameters: reasoning_effort layer %u is not a MoE layer", il));
+                }
+                hparams.effort_layer[il] = true;
+            }
+            LLAMA_LOG_INFO("%s: reasoning effort steering on %zu layers, default '%s', alpha %g\n", __func__,
+                    effort_layers.size(), effort_default.empty() ? "(none)" : effort_default.c_str(), hparams.effort_alpha_default);
+        }
+    }
 
     // The Raon router normalizes selected scores by sum(scores) + 1e-20.
     hparams.expert_weights_norm_eps = 1e-20f;
@@ -159,6 +202,10 @@ void llama_model_raon1_mini::load_arch_tensors(llama_model_loader &) {
                 layer.ffn_gate_shexp = create_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), {n_embd, n_ff_shexp}, 0);
                 layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), {n_ff_shexp, n_embd}, 0);
                 layer.ffn_up_shexp   = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP,   "weight", i), {n_embd, n_ff_shexp}, 0);
+            }
+            // Raon-1 mini reasoning effort steering vector // wangqi modified 2026-11-27
+            if (hparams.effort_layer[i]) {
+                layer.ffn_effort_steer = create_tensor(tn(LLM_TENSOR_FFN_EFFORT_STEER, "weight", i), {n_embd}, 0);
             }
         }
     }
@@ -459,6 +506,13 @@ llama_model_raon1_mini::graph::graph(const llm_graph_params & params) : llm_buil
                 ggml_tensor * shared = build_situ_ffn(cur, layer.ffn_up_shexp, layer.ffn_gate_shexp,
                         layer.ffn_down_shexp, il);
                 moe = ggml_add(ctx0, moe, shared);
+            }
+            // reasoning effort steering: the MoE output (shared + routed) plus alpha * vector, before the residual;
+            // alpha 0 builds no node and leaves the graph unchanged // wangqi modified 2026-11-27
+            if (layer.ffn_effort_steer && hparams.effort_alpha_default != 0.0f) {
+                ggml_tensor * delta = ggml_scale(ctx0, layer.ffn_effort_steer, hparams.effort_alpha_default);
+                cb(delta, "effort_steer", il);
+                moe = ggml_add(ctx0, moe, delta);
             }
             cur = moe;
         }

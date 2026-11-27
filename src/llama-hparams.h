@@ -389,6 +389,11 @@ struct llama_hparams {
     // scale of the hyper-connection post gate (DeepSeek-V4 hardcodes 2.0)
     float    hc_magnitude = 0.0f;
 
+    // Raon-1 mini reasoning effort steering: the alpha of the GGUF's default effort (0: no steering) and the
+    // layers that carry ffn_effort_steer; there is no per-request effort API yet // wangqi modified 2026-11-27
+    float    effort_alpha_default = 0.0f;
+    std::array<bool, LLAMA_MAX_LAYERS> effort_layer = {};
+
     uint32_t ple_ngram_size      = 0;
     uint32_t ple_heads_per_ngram = 0;
     uint32_t ple_conv_kernel     = 0;

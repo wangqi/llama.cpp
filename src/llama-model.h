@@ -532,6 +532,8 @@ struct llama_layer {
     struct ggml_tensor * hc_ffn_fn    = nullptr;
     struct ggml_tensor * hc_ffn_base  = nullptr;
     struct ggml_tensor * hc_ffn_scale = nullptr;
+    // Raon-1 mini reasoning effort steering vector, F32 [n_embd] // wangqi modified 2026-11-27
+    struct ggml_tensor * ffn_effort_steer = nullptr;
     struct ggml_tensor * attn_comp_wkv   = nullptr;
     struct ggml_tensor * attn_comp_wgate = nullptr;
     struct ggml_tensor * attn_comp_ape   = nullptr;
