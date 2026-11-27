@@ -188,6 +188,27 @@ the resolution was to take upstream whole:
 What remains ours after this merge is only the `PQ2_0` / `PTQ1_0` quant types (ggml, CPU, Metal,
 CUDA, `llama.h`, `gguf-py`). The Hadamard runtime is upstream's.
 
+### The b12816 merge (2026-11-27): the tensor mat-mul moved to its own file
+
+<!-- wangqi modified 2026-11-27 -->
+Upstream #32677 moved the tensor-API mat-mul kernels out of `mul_mm.metal` into a new
+`ggml/src/ggml-metal/kernels/mul_mm_tensor.metal`. The new file carries no PrismML types and raised **no
+conflict**, but the host builds kernel names from the type name, so on M5 / A19 and newer (the only
+devices with the tensor path) a PQ2_0 / PTQ1_0 model would ask for a kernel that does not exist. The
+merge adds the 10 `pq2_0` / `ptq1_0` instantiations there. Check after every merge:
+`grep -c 'pq2_0\|ptq1_0' ggml/src/ggml-metal/kernels/mul_mm_tensor.metal` is non-zero, and
+`GGML_METAL_TENSOR_ENABLE=1 test-backend-ops -o MUL_MAT -p 'pq2_0|ptq1_0'` passes on a Mac.
+
+| File | Resolution |
+|---|---|
+| `kernels/mul_mm.metal` | Take upstream (new template signature, `_prec_bf16` / `_prec_f32` variants), then add a `pq2_0` and `ptq1_0` instantiation after each of upstream's 8 `q2_0` ones. |
+| `kernels/mul_mm_tensor.metal` | No conflict; add the PrismML instantiations (above). |
+| `src/llama-quant.cpp` | Upstream's new `fallback_type_for()` now holds the quant fallback; map `PTQ1_0` / `PQ2_0` to `Q4_0` there. |
+| `ggml-cuda/mmq-config-cdna.cuh` | Take upstream; keep the 7 PQ2_0 rows retuned to mirror upstream's Q4_0 rows. Not built. |
+
+Not carried (triage 2026-11-27): PrismML's new `PQ1_0` (group 64) and the `PQ2_0M` type its Metal commits
+reference. A GGUF in either type will not load in this fork; carry them when a model ships in one.
+
 ### Vulkan is declined on purpose
 
 `ggml-vulkan.cpp` and the Vulkan shaders conflicted heavily. We build no Vulkan backend for any
