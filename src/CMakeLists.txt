@@ -7,7 +7,6 @@ llama_add_compile_flags()
 # llama
 
 file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")
-file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")
 
 set(LLAMA_CORE_SOURCES
     llama.cpp
@@ -50,34 +49,7 @@ add_library(llama
             ${LLAMA_CORE_SOURCES}
             unicode.h
             ${LLAMA_MODELS_SOURCES}
-            # upstream #31865 (b12361 merge) removed clip.cpp / clip.h and split the code into
-            # mtmd-model.cpp, mtmd-subcontext.cpp and mtmd-graph.cpp
-            # wangqi modified 2026-11-13
-            mtmd-model.cpp
-            mtmd-subcontext.cpp
-            mtmd-graph.cpp
-            mtmd.cpp
-            mtmd-audio.cpp
-            mtmd-image.cpp
-            mtmd-helper.cpp
-            # mtmd-helper split into a second TU in b10333 (PR #26254, Qwen3-TTS audio gen)
-            # wangqi modified 2026-08-10
-            mtmd-helper-gen.cpp
-            # mtmd-helper.cpp includes "hash/hash.h" since b10724 (PR #27274, sha256 input
-            # hashing). Upstream links the separate vendor::hash static library, but the
-            # xcframework build only merges libllama/libggml*, so these are compiled straight
-            # into the llama target from the copy build-xcframework-ios.sh puts in src/hash/.
-            # wangqi modified 2026-08-31
-            hash/hash.cpp
-            hash/sha256/sha256.c
-            hash/sha1/sha1.c
-            hash/xxhash/xxhash.c
-            ${LLAMA_CLIP_MODEL_SOURCES}
             )
-
-# sha1.h wraps its API in `namespace vendor_hash`, so sha1.c only compiles as C++.
-# Matches vendor/hash/CMakeLists.txt. wangqi modified 2026-08-31
-set_source_files_properties(hash/sha1/sha1.c PROPERTIES LANGUAGE CXX)
 
 set_target_properties(llama PROPERTIES
     VERSION ${LLAMA_VERSION_BASE}
@@ -91,34 +63,9 @@ set_target_properties(llama PROPERTIES
 set_source_files_properties(${LLAMA_CORE_SOURCES} ../include/llama.h unicode.h
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
-# Upstream turned UNITY_BUILD on for the llama target in b10809 (PR #28091) and excluded only
-# LLAMA_CORE_SOURCES. The mtmd/clip/hash sources above live in upstream's separate `mtmd` target,
-# which is NOT unity-built, so nothing upstream ever compiles them concatenated: mtmd-helper.cpp
-# defines MINIAUDIO_IMPLEMENTATION and STB_IMAGE_IMPLEMENTATION, and several clip-models files use
-# file-local statics. Keep every source this fork adds out of the unity batches.
-# wangqi modified 2026-09-18
-set_source_files_properties(
-    mtmd-model.cpp
-    mtmd-subcontext.cpp
-    mtmd-graph.cpp
-    mtmd.cpp
-    mtmd-audio.cpp
-    mtmd-image.cpp
-    mtmd-helper.cpp
-    mtmd-helper-gen.cpp
-    hash/hash.cpp
-    hash/sha256/sha256.c
-    hash/sha1/sha1.c
-    hash/xxhash/xxhash.c
-    ${LLAMA_CLIP_MODEL_SOURCES}
-    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-
 configure_file(llama-version.h.in ${CMAKE_CURRENT_BINARY_DIR}/llama-version.h @ONLY)
 
 target_include_directories(llama PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
-# sha256.c includes "rotate-bits/rotate-bits.h" relative to the hash root.
-# wangqi modified 2026-08-31
-target_include_directories(llama PRIVATE hash)
 target_include_directories(llama PUBLIC ../include)
 target_compile_features   (llama PRIVATE cxx_std_17) # don't bump
 

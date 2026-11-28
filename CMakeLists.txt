@@ -250,6 +250,11 @@ if (LLAMA_APP_BRIDGE)
     if (NOT LLAMA_BUILD_COMMON)
         message(FATAL_ERROR "LLAMA_APP_BRIDGE needs LLAMA_BUILD_COMMON=ON")
     endif()
+    # the bridge links upstream's mtmd target, which exists with LLAMA_BUILD_MTMD (standalone) or the full tools build
+    # wangqi modified 2026-11-27
+    if (NOT LLAMA_BUILD_MTMD AND NOT LLAMA_BUILD_TOOLS)
+        message(FATAL_ERROR "LLAMA_APP_BRIDGE needs LLAMA_BUILD_MTMD=ON (or LLAMA_BUILD_TOOLS=ON)")
+    endif()
     add_subdirectory(tools/app-bridge)
 endif()
 

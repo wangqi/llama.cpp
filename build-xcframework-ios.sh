@@ -75,237 +75,19 @@ COMMON_CMAKE_ARGS=(
     # app bridge: a plain C shim over libcommon (TTS / ASR chat-template prompts) linked into the framework
     # wangqi modified 2026-11-24
     -DLLAMA_APP_BRIDGE=ON
+    # build libmtmd with upstream's tools/mtmd/CMakeLists.txt (standalone, tools stay OFF) instead of compiling copied
+    # mtmd sources into libllama; MTMD_VIDEO stays OFF (no ffmpeg / subprocess on iOS) # wangqi modified 2026-11-27
+    -DLLAMA_BUILD_MTMD=ON
+    -DMTMD_VIDEO=OFF
 )
 
-copy_mtmd_files() {
-    # wangqi 2026-05-22: clean stale copies before re-copying. Upstream sometimes
-    # renames or removes vision encoders (e.g. b9279 merged hunyuanocr.cpp into
-    # hunyuanvl.cpp). The CMake glob picks up every .cpp left in src/clip-models/,
-    # so a stale file from a previous build will fail compilation against the new
-    # struct names. Wipe the directory before each refresh.
-    rm -rf src/clip-models
-    rm -f src/clip.cpp src/clip.h src/clip-impl.h src/clip-graph.h src/clip-model.h
-    # upstream #31865 (b12361 merge) renamed the clip sources to mtmd-model / mtmd-graph /
-    # mtmd-impl and added mtmd-subcontext. wangqi modified 2026-11-13
-    rm -f src/mtmd-model.cpp src/mtmd-model.h src/mtmd-graph.cpp src/mtmd-graph.h
-    rm -f src/mtmd-subcontext.cpp src/mtmd-subcontext.h src/mtmd-impl.h
-    rm -f src/mtmd.cpp src/mtmd.h src/mtmd-audio.cpp src/mtmd-audio.h
-    rm -f src/mtmd-helper.cpp src/mtmd-helper.h src/mtmd-image.cpp src/mtmd-image.h
-    # wangqi 2026-08-10: mtmd-helper was split in b10333 (PR #26254, Qwen3-TTS)
-    rm -f src/mtmd-helper-common.h src/mtmd-helper-gen.cpp
-    # wangqi 2026-08-31: mtmd-internal.h added in b10724 (PR #27348, mergeable bitmaps)
-    rm -f src/mtmd-internal.h
-    rm -rf src/debug
-    # wangqi 2026-08-31: vendored hash sources added in b10724 (PR #27274, sha256 input
-    # hashing). Wipe before re-copying so a stale copy cannot shadow the new one.
-    rm -rf src/hash
-
-    cp -fp "src/stb/stb_image.h" src/ 2>/dev/null || cp -fp "vendor/stb/stb_image.h" src/ 2>/dev/null || echo "Warning: stb_image.h not found"
-    # wangqi 2026-08-31: b10724 made mtmd-helper.cpp include "hash/hash.h" for sha256 input
-    # hashing (PR #27274). Upstream satisfies that with the new vendor::hash static library,
-    # but combine_static_libraries() below only merges libllama/libggml*, so a separate
-    # libvendor-hash.a would never reach the app and hash_sha256_hex would fail to link.
-    # Mirror the existing src/stb and src/miniaudio pattern instead: copy the sources into
-    # src/hash/ and compile them straight into the llama target (see src/CMakeLists.txt).
-    mkdir -p src/hash
-    cp -Rp vendor/hash/. src/hash/
-    rm -f src/hash/CMakeLists.txt
-    # Core model / graph files. Upstream #31865 (b12361 merge) removed clip.cpp, clip.h,
-    # clip-impl.h, clip-graph.h and clip-model.h and consolidated them into the mtmd-* files below.
-    # wangqi modified 2026-11-13
-    cp -fp "tools/mtmd/mtmd-impl.h" src/
-    cp -fp "tools/mtmd/mtmd-model.h" src/
-    cp -fp "tools/mtmd/mtmd-model.cpp" src/
-    cp -fp "tools/mtmd/mtmd-graph.h" src/
-    cp -fp "tools/mtmd/mtmd-graph.cpp" src/
-    cp -fp "tools/mtmd/mtmd-subcontext.h" src/
-    cp -fp "tools/mtmd/mtmd-subcontext.cpp" src/
-    # Core mtmd files
-    cp -fp "tools/mtmd/mtmd.h" src/
-    cp -fp "tools/mtmd/mtmd.cpp" src/
-    cp -fp "tools/mtmd/mtmd-audio.h" src/
-    cp -fp "tools/mtmd/mtmd-audio.cpp" src/
-    cp -fp "tools/mtmd/mtmd-helper.h" src/
-    cp -fp "tools/mtmd/mtmd-helper.cpp" src/
-    # wangqi 2026-08-10: b10333 split mtmd-helper into a shared internal header plus an
-    # audio-generation translation unit (PR #26254). mtmd-helper.cpp now includes
-    # mtmd-helper-common.h, so the header is mandatory; mtmd-helper-gen.cpp carries the
-    # mtmd_helper_gen_audio_* symbols declared in mtmd-helper.h.
-    cp -fp "tools/mtmd/mtmd-helper-common.h" src/
-    cp -fp "tools/mtmd/mtmd-helper-gen.cpp" src/
-    # wangqi 2026-08-31: b10724 moved the mtmd-internal structs out of mtmd.cpp into their
-    # own header (PR #27348, mtmd_bitmap_set_mergeable). mtmd.cpp includes it unconditionally,
-    # so the header is mandatory even though it contributes no translation unit.
-    cp -fp "tools/mtmd/mtmd-internal.h" src/
-    # wangqi 2026-03-28: mtmd.cpp now includes "mtmd-image.h" (added in b8565)
-    cp -fp "tools/mtmd/mtmd-image.h" src/
-    cp -fp "tools/mtmd/mtmd-image.cpp" src/
-    # wangqi 2026-03-15: mtmd.cpp now includes "debug/mtmd-debug.h" (added in b8355)
-    mkdir -p src/debug
-    cp -fp "tools/mtmd/debug/mtmd-debug.h" src/debug/
-    # NEW: Vision model implementations (added in upstream after b7332)
-    # These go to src/clip-models/ to avoid conflict with src/models/ (llama core models)
-    mkdir -p src/clip-models
-    cp -fp "tools/mtmd/models/models.h" src/clip-models/
-    cp -fp "tools/mtmd/models/cogvlm.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/internvl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/kimivl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/llama4.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/llava.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/minicpmv.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/pixtral.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/qwen2vl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/qwen3vl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/siglip.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/whisper-enc.cpp" src/clip-models/
-    # wangqi 2025-12-26: Added new encoders from b7549 upgrade
-    cp -fp "tools/mtmd/models/conformer.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/glm4v.cpp" src/clip-models/
-    # wangqi 2026-01-02: Added new vision encoder from b7610 upgrade
-    cp -fp "tools/mtmd/models/youtuvl.cpp" src/clip-models/
-    # wangqi 2026-01-11: Added new vision encoder from b7703 upgrade (Gemma3n MobileNetV5)
-    cp -fp "tools/mtmd/models/mobilenetv5.cpp" src/clip-models/
-    # wangqi 2026-02-18: Added new vision encoders from remote HEAD upgrade
-    cp -fp "tools/mtmd/models/kimik25.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/nemotron-v2-vl.cpp" src/clip-models/
-    # wangqi 2026-02-24: Added new vision encoder from b8145 upgrade (PaddleOCR-VL)
-    cp -fp "tools/mtmd/models/paddleocr.cpp" src/clip-models/
-    # wangqi 2026-03-28: Added new vision encoder from b8565 upgrade (DeepSeekOCR)
-    cp -fp "tools/mtmd/models/deepseekocr.cpp" src/clip-models/
-    # wangqi 2026-04-02: Added new vision encoder from b8642 upgrade (Gemma4V)
-    cp -fp "tools/mtmd/models/gemma4v.cpp" src/clip-models/
-    # wangqi 2026-04-07: Added new vision encoder from b8690 upgrade (HunyuanOCR)
-    # wangqi 2026-05-22: HunyuanOCR was merged into HunyuanVL in b9279 (PR #23329); file renamed
-    cp -fp "tools/mtmd/models/hunyuanvl.cpp" src/clip-models/
-    # wangqi 2026-04-12: Added new vision/audio encoders from b8763 upgrade (Dots.OCR, Gemma4 Audio, Step3-VL)
-    cp -fp "tools/mtmd/models/dotsocr.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/gemma4a.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/step3vl.cpp" src/clip-models/
-    # wangqi 2026-04-19: Added new audio encoder from b8843 upgrade (Qwen3 audio / qwen3-omni / qwen3-asr)
-    cp -fp "tools/mtmd/models/qwen3a.cpp" src/clip-models/
-    # wangqi 2026-04-25: Added new vision encoder from b8933 upgrade (Reka Edge 2603 / yasa2)
-    cp -fp "tools/mtmd/models/yasa2.cpp" src/clip-models/
-    # wangqi 2026-05-09: Added new audio encoder from b9090 upgrade (IBM Granite 4.0 Speech)
-    cp -fp "tools/mtmd/models/granite-speech.cpp" src/clip-models/
-    # wangqi 2026-05-15: Added new vision encoder from b9165 upgrade (MiMo v2.5 Vision)
-    cp -fp "tools/mtmd/models/mimovl.cpp" src/clip-models/
-    # wangqi 2026-06-07: Added new encoders from b9553 upgrade
-    # DeepSeek-OCR 2 (PR #20975), Granite 4 Vision (PR #23545), EXAONE 4.5 VL (PR #21733),
-    # Gemma 4 unified audio + unified vision projectors (PRs #24077/#24082/#24088)
-    cp -fp "tools/mtmd/models/deepseekocr2.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/granite4-vision.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/exaone4_5.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/gemma4ua.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/gemma4uv.cpp" src/clip-models/
-    # wangqi 2026-08-10: Added new encoders from b10333 upgrade
-    # MiniMax-M3 vision (PR #25113), MiMo-V2.5 RVQ audio (PR #26190),
-    # Parakeet audio for Nemotron 3 Nano Omni (PR #22520),
-    # Qwen3-TTS generation + speaker encoder (PR #26254)
-    cp -fp "tools/mtmd/models/minimax-m3.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/mimo-audio.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/parakeet.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/qwen3tts-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/qwen3tts-spkenc.cpp" src/clip-models/
-    # wangqi 2026-08-31: Added new encoders from b10724 upgrade
-    # dots3-note vision + audio (PR #27524), Muse Glimmer vision (PR #26841),
-    # Pocket-TTS generation head / SEANet decoder / speaker encoder (PR #26871)
-    cp -fp "tools/mtmd/models/dots3note.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/muse-glimmer.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/pockettts-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/pockettts-seanet.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/pockettts-spkenc.cpp" src/clip-models/
-    # wangqi 2026-09-18: Added new vision encoder from the b11035 upgrade
-    # DeepSeek-V4-Flash-Vision-Exp (PR #28133); clip.cpp constructs clip_graph_deepseek4v,
-    # so omitting it is an undefined-symbol link error rather than a silent capability loss.
-    cp -fp "tools/mtmd/models/deepseek4v.cpp" src/clip-models/
-    # wangqi 2026-09-27: Added Ling 3.0 VL vision encoder from b11222 upgrade (#29151)
-    cp -fp "tools/mtmd/models/ling3vl.cpp" src/clip-models/
-    # wangqi 2026-10-17: Added new encoders from the b11716 upgrade: Muse Spark audio (#30616),
-    # Nemotron Omni and Voxtral Realtime (#30629); clip.cpp constructs their clip_graph_* types
-    cp -fp "tools/mtmd/models/muse-spark-audio.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/nemotron-omni.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/voxtral-rt.cpp" src/clip-models/
-    # Added new encoders from the b11854 upgrade: SenseNova-U1 vision and Soprano audio;
-    # clip.cpp constructs clip_graph_sensenova_u1 / clip_graph_soprano, so omitting them is an
-    # undefined-symbol link error. soprano.cpp includes "../mtmd-audio.h", copied to src/ above.
-    # wangqi modified 2026-10-24
-    cp -fp "tools/mtmd/models/sensenova-u1.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/soprano.cpp" src/clip-models/
-    # Added new encoders from the b12015 upgrade: LFM3-VL vision and LFM3-Audio (encoder + generator);
-    # clip.cpp constructs their clip_graph_* classes, so omitting them is an undefined-symbol link error.
-    # wangqi modified 2026-10-30
-    cp -fp "tools/mtmd/models/lfm3vl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/lfm3a.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/lfm3a-gen.cpp" src/clip-models/
-    # Added new encoders from the b12361 upgrade: Chatterbox TTS (#30993), Drama-3 TTS (#31613),
-    # MageVL (#31819), Nemotron 3.5 Transcribe (#31471); mtmd-model.cpp / mtmd-graph.cpp construct
-    # their graphs, so omitting one is an undefined-symbol link error.
-    # wangqi modified 2026-11-13
-    cp -fp "tools/mtmd/models/chatterbox-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/chatterbox-spkenc.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/drama3-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/magevl.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/nemotron-transcribe.cpp" src/clip-models/
-    # wangqi 2026-11-22: Added new encoders from b12632 upgrade
-    # Inkling 2 vision (PR #32217), VibeVoice ASR (PR #32329), Fish S2 generation + speaker encoder
-    # (PRs #32330/#32586), Kokoro (PR #32413), Tiny-Voca (PR #32427), Music3 / YuE2 generation and the
-    # snake VAE (PR #32435), VoxCPM2 generation + speaker encoder (PR #32443), Moshi/Hibiki (PR #32491),
-    # Zonos3 generation + speaker encoder (PR #32020)
-    cp -fp "tools/mtmd/models/inkling2v.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/vibevoice-asr.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/fish-s2-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/fish-s2-spkenc.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/kokoro.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/tiny-voca.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/music3-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/yue2-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/snake-vae.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/voxcpm2-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/voxcpm2-spkenc.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/moshi.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/zonos3-gen.cpp" src/clip-models/
-    cp -fp "tools/mtmd/models/zonos3-spkenc.cpp" src/clip-models/
-    # Added new encoder from the b12816 upgrade: HY-V4 vision; mtmd-model.cpp / mtmd-graph.cpp construct
-    # its graph, so omitting it is an undefined-symbol link error. wangqi modified 2026-11-27
-    cp -fp "tools/mtmd/models/hy-v4.cpp" src/clip-models/
-    # Patch every source that includes the encoder header to use clip-models/ instead of models/.
-    # Since upstream #31865 that is four files, not clip.cpp alone; unpatched, "models/models.h"
-    # resolves to the llama core src/models/models.h and the build fails on missing clip types.
-    # wangqi modified 2026-11-13
-    for f in src/mtmd.cpp src/mtmd-model.cpp src/mtmd-graph.cpp src/mtmd-subcontext.cpp; do
-        sed -i '' 's|#include "models/models.h"|#include "clip-models/models.h"|g' "$f"
-    done
-    # ============================================================================
-    # NOTE: src/CMakeLists.txt now uses file(GLOB LLAMA_CLIP_MODEL_SOURCES "clip-models/*.cpp")
-    # since the b8843 merge conflict resolution. No sed patching needed — all files
-    # copied to src/clip-models/ are automatically picked up by the glob.
-    # wangqi 2026-04-19: removed explicit CMakeLists.txt sed patch (was b8763 and earlier)
-    # ============================================================================
-    # wangqi 2026-03-28: mtmd-image.cpp added in b8565 — guard kept for safety on older checkouts
-    if ! grep -q "mtmd-image.cpp" src/CMakeLists.txt; then
-        sed -i '' 's|mtmd-audio.cpp|mtmd-audio.cpp\
-            mtmd-image.cpp|' src/CMakeLists.txt
-        echo "Patched src/CMakeLists.txt to include mtmd-image.cpp"
-    fi
-    # wangqi 2026-08-10: mtmd-helper-gen.cpp added in b10333 — guard kept for safety on
-    # checkouts where src/CMakeLists.txt has not been updated yet
-    if ! grep -q "mtmd-helper-gen.cpp" src/CMakeLists.txt; then
-        sed -i '' 's|mtmd-helper.cpp|mtmd-helper.cpp\
-            mtmd-helper-gen.cpp|' src/CMakeLists.txt
-        echo "Patched src/CMakeLists.txt to include mtmd-helper-gen.cpp"
-    fi
-    # wangqi 2026-08-31: hash/*.c(pp) added in b10724 — guard kept for safety on checkouts
-    # where src/CMakeLists.txt has not been updated yet. sha1.c must be compiled as C++
-    # because sha1.h wraps the API in namespace vendor_hash.
-    if ! grep -q "hash/hash.cpp" src/CMakeLists.txt; then
-        echo "ERROR: src/CMakeLists.txt is missing the hash/ sources required by mtmd-helper.cpp" >&2
-        echo "       Add hash/hash.cpp, hash/sha256/sha256.c, hash/sha1/sha1.c and" >&2
-        echo "       hash/xxhash/xxhash.c to the llama target before building." >&2
-        exit 1
-    fi
-}
-echo "copy mtmd and clip from tools/mtmd/ to src"
-copy_mtmd_files
+# mtmd is built by upstream's own tools/mtmd/CMakeLists.txt (libmtmd.a, LLAMA_BUILD_MTMD=ON above) and merged into
+# llama.framework by combine_static_libraries(); the copy_mtmd_files() step that copied tools/mtmd/ sources into src/
+# (and had to list every new encoder in tools/mtmd/models/) is gone. wangqi modified 2026-11-27
+# The script used to copy those sources into src/ and delete them on the next run; remove copies an older run left
+# behind so they cannot shadow upstream's headers. wangqi modified 2026-11-27
+rm -rf src/clip-models src/hash
+rm -f src/mtmd*.cpp src/mtmd*.h
 
 # wangqi 2026-06-07: use a single awk that reads to EOF instead of `head -n1 | awk`.
 # Under `set -o pipefail`, `head` closing the pipe early makes xcodebuild get SIGPIPE,
@@ -397,7 +179,8 @@ setup_framework_structure() {
     # clip.h was removed upstream in #31865 and was never exposed in the module map
     # wangqi modified 2026-11-13
     cp tools/mtmd/mtmd.h           ${header_path}
-    cp src/mtmd-helper.h           ${header_path}
+    # from tools/mtmd/ now that nothing is copied into src/ # wangqi modified 2026-11-27
+    cp tools/mtmd/mtmd-helper.h    ${header_path}
     # app bridge C header (lab_* entry points) # wangqi modified 2026-11-24
     cp tools/app-bridge/llama-app-bridge.h ${header_path}
 
@@ -564,6 +347,10 @@ combine_static_libraries() {
         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
         "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
+        # upstream's libmtmd (mtmd_*, mtmd_helper_*, every encoder) and the vendor::hash library it links privately
+        # (sha256 / xxhash input hashing), as upstream's build-xcframework.sh merges them # wangqi modified 2026-11-27
+        "${base_dir}/${build_dir}/tools/mtmd/${release_dir}/libmtmd.a"
+        "${base_dir}/${build_dir}/vendor/hash/${release_dir}/libvendor-hash.a"
         # app bridge: force-loaded so every lab_* entry point is exported # wangqi modified 2026-11-24
         "${base_dir}/${build_dir}/tools/app-bridge/${release_dir}/libllama-app-bridge.a"
     )
